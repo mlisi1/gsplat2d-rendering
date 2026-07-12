@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.gsplat2d_rendering/
+*.idx.npz

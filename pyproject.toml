@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsplat2d-rendering"
+version = "0.1.0"
+description = "General-purpose rendering library for trained 2D Gaussian Splatting (surfel) models, wrapping diff-surfel-rasterization with culling/LOD/compression for large scenes."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "torch",
+    "plyfile",
+]
+
+[project.optional-dependencies]
+examples = ["pillow"]
+
+# diff-surfel-rasterization (the CUDA tile-sort/alpha-composite kernel this
+# library renders with) is intentionally NOT listed here: it's a compiled
+# CUDA extension vendored as a git submodule at
+# third_party/diff-surfel-rasterization, built via its own setup.py (needs
+# nvcc + a matching torch/CUDA install). Build it once after
+# `git submodule update --init --recursive`:
+#   pip install -e third_party/diff-surfel-rasterization
+# It carries Inria's Gaussian-Splatting research license (non-commercial use
+# only) -- see that submodule's LICENSE.md and this repo's README.
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gsplat2d_rendering*"]
