@@ -210,7 +210,7 @@ class SplatRenderer:
         self.profiler.reset()
 
     def render(
-        self, camera: Camera, *,
+        self, camera: Camera, *, render_camera: Camera | None = None,
         render_mode: RenderMode = "gaussian", point_size: float = 0.01,
         sparsity: int = 1, bounds: Bounds | None = None, min_opacity: float = 0.0,
         depth_ratio: float = 0.0,
@@ -223,10 +223,19 @@ class SplatRenderer:
         threshold mask, distinct from compression.py's load-time
         prune_low_opacity (0.0 = disabled). `depth_ratio`: blend fraction
         toward the kernel's median depth, see render/extras.py (0.0 =
-        expected-depth-only, this library's original behavior)."""
+        expected-depth-only, this library's original behavior).
+        `render_camera`: optional second camera to project/rasterize from,
+        decoupled from `camera` -- which always drives selection (octree
+        cull, LOD, candidate filters) and view-dependent SH color -- while
+        `render_camera` (defaulting to `camera` when omitted, identical to
+        the pre-existing single-camera behavior) supplies the rasterizer's
+        viewmatrix/projmatrix/campos/resolution/fov. Lets a caller render
+        the splat set one camera would select from a different camera's
+        viewpoint, e.g. an external/debug view for auditing culling."""
         self.profiler.start()
         lap = self.profiler.lap
         model = self.model
+        proj_camera = render_camera if render_camera is not None else camera
 
         leaf_vis = None
         if self._has_octree:
@@ -268,7 +277,7 @@ class SplatRenderer:
 
         self.last_visible_count = int(means3D.shape[0])
         means2D = torch.zeros_like(means3D)
-        colors = self._compute_colors(means3D[:n_full], shs, camera)
+        colors = self._compute_colors(means3D[:n_full], shs, proj_camera)
         colors = blend_proxy_colors(colors, proxy_idx, self._proxy_features_dc_gpu)
         lap("sh_eval")
 
@@ -276,16 +285,16 @@ class SplatRenderer:
         lap("render_mode")
 
         raster_settings = self._settings_cls(
-            image_height=int(camera.height),
-            image_width=int(camera.width),
-            tanfovx=math.tan(camera.fov_x * 0.5),
-            tanfovy=math.tan(camera.fov_y * 0.5),
+            image_height=int(proj_camera.height),
+            image_width=int(proj_camera.width),
+            tanfovx=math.tan(proj_camera.fov_x * 0.5),
+            tanfovy=math.tan(proj_camera.fov_y * 0.5),
             bg=self.background,
             scale_modifier=1.0,
-            viewmatrix=camera.world_view_transform,
-            projmatrix=camera.full_proj_transform,
+            viewmatrix=proj_camera.world_view_transform,
+            projmatrix=proj_camera.full_proj_transform,
             sh_degree=model.active_sh_degree,
-            campos=camera.camera_center,
+            campos=proj_camera.camera_center,
             prefiltered=False,
             debug=False,
         )
