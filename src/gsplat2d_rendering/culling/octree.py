@@ -14,10 +14,13 @@ number carried over from another project.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+from gsplat2d_rendering._log import info, verbose
 
 
 @dataclass
@@ -45,6 +48,7 @@ class Octree:
 
 
 def build_octree(xyz: np.ndarray, leaf_max: int = 5000, max_depth: int = 8) -> Octree:
+    t0 = time.perf_counter()
     n = xyz.shape[0]
     leaves_indices: list[np.ndarray] = []
     leaves_aabb: list[np.ndarray] = []
@@ -84,7 +88,30 @@ def build_octree(xyz: np.ndarray, leaf_max: int = 5000, max_depth: int = 8) -> O
         flat_indices = np.zeros(0, dtype=np.int64)
         node_aabbs = np.zeros((0, 6), dtype=np.float32)
 
+    elapsed = time.perf_counter() - t0
+    info(__name__, f"Built octree: {n:,} points -> {len(node_aabbs):,} leaf nodes "
+                    f"(leaf_max={leaf_max:,}) in {elapsed:.2f}s")
+    _log_leaf_stats(node_aabbs, node_offsets)
     return Octree(node_aabbs=node_aabbs, node_offsets=node_offsets, flat_indices=flat_indices)
+
+
+def _log_leaf_stats(node_aabbs: np.ndarray, node_offsets: np.ndarray) -> None:
+    """Diagnostic-only (VERBOSE level): splats-per-leaf spread and a
+    per-depth leaf histogram, both purely derived from what build_octree
+    already computed -- no extra structural work, just reporting."""
+    if len(node_aabbs) == 0:
+        return
+    counts = np.diff(node_offsets)
+    verbose(__name__, f"Splats/leaf: avg={counts.mean():.0f} min={counts.min():,} max={counts.max():,}")
+
+    edge = (node_aabbs[:, 3:] - node_aabbs[:, :3]).max(axis=1)
+    root_edge = float(edge.max())
+    if root_edge <= 0:
+        return
+    depths = np.round(np.log2(root_edge / np.maximum(edge, 1e-12))).astype(int)
+    for d in sorted(set(depths.tolist())):
+        cnt = int((depths == d).sum())
+        verbose(__name__, f"  depth {d}: {cnt:,} leaf nodes")
 
 
 def save_octree(path: str | Path | object, octree: Octree) -> None:
@@ -109,13 +136,15 @@ def save_octree(path: str | Path | object, octree: Octree) -> None:
         )
     target = path if hasattr(path, "write") else str(path)
     np.savez_compressed(target, **kwargs)
+    dest = getattr(path, "name", path)
+    verbose(__name__, f"Saved octree ({len(octree.node_aabbs):,} leaf nodes) to {dest}")
 
 
 def load_octree(path: str | Path | object) -> Octree:
     """See save_octree's docstring re: file-like `path`."""
     data = np.load(path if hasattr(path, "read") else str(path))
     has_lod = "proxy_xyz" in data.files
-    return Octree(
+    octree = Octree(
         node_aabbs=data["node_aabbs"],
         node_offsets=data["node_offsets"],
         flat_indices=data["flat_indices"],
@@ -125,3 +154,6 @@ def load_octree(path: str | Path | object) -> Octree:
         proxy_opacity=data["proxy_opacity"] if has_lod else None,
         proxy_features_dc=data["proxy_features_dc"] if has_lod else None,
     )
+    dest = getattr(path, "name", path)
+    info(__name__, f"Loaded octree ({len(octree.node_aabbs):,} leaf nodes) from {dest}")
+    return octree

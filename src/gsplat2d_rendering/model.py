@@ -22,6 +22,8 @@ from dataclasses import dataclass
 
 import torch
 
+from gsplat2d_rendering._log import info
+
 
 @dataclass
 class GaussianModel:
@@ -112,3 +114,4 @@ class GaussianModel:
         self.raw_rotation = self.raw_rotation[perm].contiguous()
         self.features_dc = self.features_dc[perm].contiguous()
         self.features_rest = self.features_rest[perm].contiguous()
+        info(__name__, f"Reordered {self.num_points:,} splats to octree leaf-contiguous order")

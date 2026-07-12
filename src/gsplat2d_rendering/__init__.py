@@ -2,6 +2,13 @@
 models: load a PLY, optionally build an octree for culling/LOD, render from
 any camera pose via diff-surfel-rasterization. See README.md.
 """
+from gsplat2d_rendering._log import (
+    NORMAL,
+    SILENT,
+    VERBOSE,
+    get_verbosity,
+    set_verbosity,
+)
 from gsplat2d_rendering.camera import Camera, Intrinsics
 from gsplat2d_rendering.culling import (
     Octree,
@@ -39,6 +46,11 @@ __all__ = [
     "depth_to_points",
     "RenderMode",
     "Bounds",
+    "set_verbosity",
+    "get_verbosity",
+    "SILENT",
+    "NORMAL",
+    "VERBOSE",
 ]
 
 __version__ = "0.1.0"

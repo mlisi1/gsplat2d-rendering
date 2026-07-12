@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from gsplat2d_rendering._log import warning
+
 FP16_MAX = 65504.0
 
 
@@ -39,13 +41,13 @@ def to_fp16_safe(arr: np.ndarray, label: str = "") -> np.ndarray:
     arr = arr.astype(np.float32)
     n_bad = int(np.sum(~np.isfinite(arr)))
     if n_bad > 0:
-        print(f"[gsplat2d_rendering] {label}: zeroing {n_bad:,} NaN/Inf values before fp16 conversion")
+        warning(__name__, f"{label}: zeroing {n_bad:,} NaN/Inf values before fp16 conversion")
         arr = np.where(np.isfinite(arr), arr, 0.0)
     max_abs = float(np.abs(arr).max()) if arr.size else 0.0
     if max_abs > FP16_MAX:
         threshold = float(min(np.percentile(np.abs(arr), 99.9), FP16_MAX))
         n_clip = int(np.sum(np.abs(arr) > threshold))
-        print(f"[gsplat2d_rendering] {label}: clipping {n_clip:,} fp16-overflow values to ±{threshold:.1f}")
+        warning(__name__, f"{label}: clipping {n_clip:,} fp16-overflow values to ±{threshold:.1f}")
         arr = np.clip(arr, -threshold, threshold)
     return arr.astype(np.float16)
 

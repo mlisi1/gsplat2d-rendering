@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 import torch
 
+from gsplat2d_rendering._log import info, verbose
 from gsplat2d_rendering.camera import Camera
 from gsplat2d_rendering.culling import Octree, visible_leaf_mask_torch
 from gsplat2d_rendering.model import GaussianModel
@@ -129,6 +130,19 @@ class SplatRenderer:
             self._leaf_radius_gpu = (
                 (self._node_aabbs_gpu[:, 3:] - self._node_aabbs_gpu[:, :3]) * 0.5
             ).amax(dim=-1, keepdim=True)
+
+        if self._has_octree:
+            info(__name__, f"Culling enabled: {len(octree.node_aabbs):,} leaf nodes")
+        elif not culling_enabled:
+            info(__name__, "Culling disabled: culling_enabled=False")
+        else:
+            info(__name__, "Culling disabled: no octree provided")
+        if octree_lod:
+            if self._proxy_xyz_gpu is not None:
+                verbose(__name__, f"LOD enabled: {len(octree.node_aabbs):,} leaf proxies "
+                        f"(pixel threshold {lod_leaf_pixel_threshold})")
+            else:
+                verbose(__name__, "LOD requested but unavailable (no octree, or octree has no proxies)")
 
     def _gather_leaf_slices(self, leaf_mask: torch.Tensor):
         """Builds one index tensor covering every True leaf's contiguous

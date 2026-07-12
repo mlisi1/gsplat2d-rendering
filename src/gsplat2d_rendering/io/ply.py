@@ -27,6 +27,7 @@ import numpy as np
 import torch
 from plyfile import PlyData
 
+from gsplat2d_rendering._log import info, warning
 from gsplat2d_rendering.compression import apply_compression, prune_low_opacity
 from gsplat2d_rendering.model import GaussianModel
 
@@ -67,7 +68,7 @@ def _stack(el, names: list[str]) -> np.ndarray:
 def _sanitize(arr: np.ndarray, label: str) -> np.ndarray:
     n_bad = int(np.sum(~np.isfinite(arr)))
     if n_bad > 0:
-        print(f"[gsplat2d_rendering] {label}: zeroing {n_bad:,} NaN/Inf values")
+        warning(__name__, f"{label}: zeroing {n_bad:,} NaN/Inf values")
         arr = np.where(np.isfinite(arr), arr, 0.0)
     return arr
 
@@ -136,6 +137,6 @@ def load_gaussian_model(
         active_sh_degree=degree,
     )
     prune_note = f", pruned {n_pruned:,} at opacity<={opacity_threshold}" if n_pruned else ""
-    print(f"[gsplat2d_rendering] Loaded {model.num_points:,} splats (SH degree {degree}, "
-          f"compression level {compression_level}{prune_note}) from {ply_path}")
+    info(__name__, f"Loaded {model.num_points:,} splats (SH degree {degree}, "
+         f"compression level {compression_level}{prune_note}) from {ply_path}")
     return model
