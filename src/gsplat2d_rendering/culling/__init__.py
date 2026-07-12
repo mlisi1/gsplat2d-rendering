@@ -1,6 +1,7 @@
 from gsplat2d_rendering.culling.cache import index_cache_path, load_or_build_octree
 from gsplat2d_rendering.culling.frustum import (
     visible_leaf_mask_torch,
+    visible_point_mask_bounds_torch,
     visible_point_mask_exact_torch,
     visible_point_mask_screen_size_torch,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "visible_leaf_mask_torch",
     "visible_point_mask_exact_torch",
     "visible_point_mask_screen_size_torch",
+    "visible_point_mask_bounds_torch",
     "index_cache_path",
     "load_or_build_octree",
 ]

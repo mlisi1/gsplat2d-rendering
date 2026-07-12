@@ -12,7 +12,14 @@ from gsplat2d_rendering.culling import (
 )
 from gsplat2d_rendering.io import detect_sh_degree, load_gaussian_model, resolve_ply_path
 from gsplat2d_rendering.model import GaussianModel
-from gsplat2d_rendering.render import Renderer, RenderResult
+from gsplat2d_rendering.render import (
+    Bounds,
+    Renderer,
+    RenderMode,
+    RenderResult,
+    depth_to_normal,
+    depth_to_points,
+)
 
 __all__ = [
     "GaussianModel",
@@ -28,6 +35,10 @@ __all__ = [
     "load_or_build_octree",
     "Renderer",
     "RenderResult",
+    "depth_to_normal",
+    "depth_to_points",
+    "RenderMode",
+    "Bounds",
 ]
 
 __version__ = "0.1.0"

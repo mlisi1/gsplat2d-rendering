@@ -87,7 +87,13 @@ def build_octree(xyz: np.ndarray, leaf_max: int = 5000, max_depth: int = 8) -> O
     return Octree(node_aabbs=node_aabbs, node_offsets=node_offsets, flat_indices=flat_indices)
 
 
-def save_octree(path: str | Path, octree: Octree) -> None:
+def save_octree(path: str | Path | object, octree: Octree) -> None:
+    """`path` may be a str/Path, or an already-open file object (anything
+    with `.write`). `np.savez_compressed` appends `.npz` to a string path
+    that doesn't already end in it -- surprising for a caller with their
+    own extension convention (e.g. `.idx`) -- but leaves an open file
+    handle's name alone, so file-like `path` is passed through untouched
+    rather than `str()`-ed."""
     kwargs = dict(
         node_aabbs=octree.node_aabbs,
         node_offsets=octree.node_offsets,
@@ -101,11 +107,13 @@ def save_octree(path: str | Path, octree: Octree) -> None:
             proxy_opacity=octree.proxy_opacity,
             proxy_features_dc=octree.proxy_features_dc,
         )
-    np.savez_compressed(str(path), **kwargs)
+    target = path if hasattr(path, "write") else str(path)
+    np.savez_compressed(target, **kwargs)
 
 
-def load_octree(path: str | Path) -> Octree:
-    data = np.load(str(path))
+def load_octree(path: str | Path | object) -> Octree:
+    """See save_octree's docstring re: file-like `path`."""
+    data = np.load(path if hasattr(path, "read") else str(path))
     has_lod = "proxy_xyz" in data.files
     return Octree(
         node_aabbs=data["node_aabbs"],

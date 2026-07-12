@@ -48,7 +48,14 @@ class Intrinsics:
 
     @classmethod
     def from_fov(cls, width: int, height: int, fov_x: float, fov_y: float | None = None) -> "Intrinsics":
-        """fov_y defaults to fov_x scaled by the aspect ratio (square pixels)."""
+        """fov_y defaults to fov_x scaled by the aspect ratio (square pixels).
+
+        That default is a linear angle-scaling approximation
+        (`fov_y = fov_x * height / width`), not the exact tan()-based
+        relation implied by "square pixels" (fx == fy) -- the error is
+        small at typical FOVs but isn't zero. If a caller needs fx == fy
+        exactly, construct `Intrinsics(width, height, fx, fy)` directly
+        instead of going through this classmethod."""
         if fov_y is None:
             fov_y = fov_x * height / width
         fx = width / (2.0 * math.tan(fov_x * 0.5))

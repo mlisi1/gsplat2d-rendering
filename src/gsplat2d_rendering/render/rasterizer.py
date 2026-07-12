@@ -1,17 +1,19 @@
 """Wraps diff-surfel-rasterization directly: SH evaluation + the CUDA
-tile-sort/alpha-composite kernel + extraction of depth from its extra-
-channels output buffer.
+tile-sort/alpha-composite kernel + extraction of depth (and, opt-in, the
+kernel's other extra channels) from its extra-channels output buffer.
 
 The channel layout of the rasterizer's second output tensor (7 channels) is
 fixed by the CUDA kernel itself (cuda_rasterizer/auxiliary.h): DEPTH_OFFSET=0
 (accumulated depth*weight), ALPHA_OFFSET=1, NORMAL_OFFSET=2..4,
 MIDDEPTH_OFFSET=5, DISTORTION_OFFSET=6 -- confirmed against that header, not
-assumed. Only depth (accumulated depth / alpha, i.e. the expected depth) is
-extracted here; normals/distortion are left in the kernel's raw output for
-a caller who wants them.
+assumed. Every channel is computed by the kernel every frame regardless of
+what gets extracted (see render/extras.py); `with_extras` only controls
+whether normal/middepth/distortion get attached to RenderOutput.
 
 See lod_blend.py for the leaf-level LOD selection / coarse-leaf proxy
-blending this class delegates to.
+blending, candidate_filters.py for the sparsity/crop-box/opacity narrow-
+phase filters, and display_modes.py for the point/disk render modes this
+class delegates to.
 """
 from __future__ import annotations
 
@@ -21,19 +23,15 @@ from dataclasses import dataclass
 import torch
 
 from gsplat2d_rendering.camera import Camera
-from gsplat2d_rendering.culling import (
-    Octree,
-    visible_leaf_mask_torch,
-    visible_point_mask_exact_torch,
-    visible_point_mask_screen_size_torch,
-)
+from gsplat2d_rendering.culling import Octree, visible_leaf_mask_torch
 from gsplat2d_rendering.model import GaussianModel
+from gsplat2d_rendering.render.candidate_filters import Bounds, apply_candidate_filters
+from gsplat2d_rendering.render.display_modes import RenderMode, apply_render_mode
+from gsplat2d_rendering.render.extras import extract_depth_and_extras
 from gsplat2d_rendering.render.lod_blend import append_proxies, blend_proxy_colors, lod_split
 from gsplat2d_rendering.render.profiling import Profiler
 from gsplat2d_rendering.sh import C0, eval_sh
 
-_DEPTH_OFFSET = 0
-_ALPHA_OFFSET = 1
 # Field order for the raw-tensor tuples passed around render() -- matches
 # GaussianModel._activate's positional args and GaussianModel's own
 # dataclass field order.
@@ -45,6 +43,12 @@ class RenderOutput:
     rgb: torch.Tensor       # [3, H, W], float, ~[0, 1]
     depth: torch.Tensor     # [H, W], float, model-space units
     num_rendered: int       # splats actually passed to the rasterizer this frame
+    # Only populated when SplatRenderer(with_extras=True); raw, un-rotated/
+    # un-blended kernel output -- see render/extras.py.
+    alpha: torch.Tensor | None = None        # [H, W]
+    normal: torch.Tensor | None = None       # [3, H, W], camera-space
+    middepth: torch.Tensor | None = None     # [H, W]
+    distortion: torch.Tensor | None = None   # [H, W]
 
 
 class SplatRenderer:
@@ -75,7 +79,8 @@ class SplatRenderer:
                  octree: Octree | None = None, culling_enabled: bool = True,
                  culling_narrow_phase: bool = False, culling_margin: float = 0.0,
                  screen_size_culling: bool = False, screen_size_min_pixels: float = 1.0,
-                 octree_lod: bool = False, lod_leaf_pixel_threshold: float = 16.0):
+                 octree_lod: bool = False, lod_leaf_pixel_threshold: float = 16.0,
+                 with_extras: bool = False):
         from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
         self._settings_cls = GaussianRasterizationSettings
         self._rasterizer_cls = GaussianRasterizer
@@ -90,6 +95,12 @@ class SplatRenderer:
         self.screen_size_min_pixels = screen_size_min_pixels
         self.octree_lod = octree_lod
         self.lod_leaf_pixel_threshold = lod_leaf_pixel_threshold
+        # Off by default: alpha/normal/middepth/distortion are computed by
+        # the kernel every frame regardless (see module docstring), but
+        # attaching them to RenderOutput keeps them alive on GPU and, for
+        # Renderer callers, pays a real per-frame CPU copy -- a cost most
+        # callers (e.g. a sensor sim only wanting RGB+depth) shouldn't pay.
+        self.with_extras = with_extras
         self.background = torch.zeros(3, dtype=torch.float32, device=device)
         self.last_visible_count = model.num_points
         self.profiler = Profiler(sync_fn=self._sync)
@@ -184,7 +195,21 @@ class SplatRenderer:
     def reset_profiling(self) -> None:
         self.profiler.reset()
 
-    def render(self, camera: Camera) -> RenderOutput:
+    def render(
+        self, camera: Camera, *,
+        render_mode: RenderMode = "gaussian", point_size: float = 0.01,
+        sparsity: int = 1, bounds: Bounds | None = None, min_opacity: float = 0.0,
+        depth_ratio: float = 0.0,
+    ) -> RenderOutput:
+        """`render_mode`/`point_size`: see render/display_modes.py.
+        `sparsity`: render every Nth candidate splat (1 = disabled).
+        `bounds`: axis-aligned world-space crop box, see
+        culling/frustum.py's visible_point_mask_bounds_torch (None =
+        disabled). `min_opacity`: non-destructive per-frame opacity-
+        threshold mask, distinct from compression.py's load-time
+        prune_low_opacity (0.0 = disabled). `depth_ratio`: blend fraction
+        toward the kernel's median depth, see render/extras.py (0.0 =
+        expected-depth-only, this library's original behavior)."""
         self.profiler.start()
         lap = self.profiler.lap
         model = self.model
@@ -209,29 +234,12 @@ class SplatRenderer:
              model.raw_rotation, model.features_dc, model.features_rest)
         )
 
-        def filter_raw(keep: torch.Tensor) -> None:
-            nonlocal raw
-            raw = tuple(field[keep] for field in raw)
-
-        if self.culling_narrow_phase and leaf_fine is not None:
-            # Exact per-point frustum test on the already leaf-gathered
-            # candidates (K-sized, not N). Operates on raw (possibly fp16)
-            # xyz upcast just for the test, same reasoning as
-            # GaussianModel.render_fields: touch only the candidates.
-            keep = visible_point_mask_exact_torch(
-                raw[_XYZ].float(), camera.full_proj_transform, margin=self.culling_margin)
-            filter_raw(keep)
-        lap("narrow_cull")
-
-        if self.screen_size_culling and leaf_fine is not None:
-            focal_x = camera.width / (2.0 * math.tan(camera.fov_x * 0.5))
-            focal_y = camera.height / (2.0 * math.tan(camera.fov_y * 0.5))
-            keep = visible_point_mask_screen_size_torch(
-                raw[_XYZ].float(), torch.exp(raw[_SCALING].float()), camera.world_view_transform,
-                focal_x, focal_y, min_pixel_radius=self.screen_size_min_pixels,
-            )
-            filter_raw(keep)
-        lap("screen_size_cull")
+        raw = apply_candidate_filters(
+            raw, camera, has_leaf_gather=leaf_fine is not None, lap=lap,
+            narrow_phase=self.culling_narrow_phase, margin=self.culling_margin,
+            screen_size=self.screen_size_culling, min_pixel_radius=self.screen_size_min_pixels,
+            sparsity=sparsity, bounds=bounds, min_opacity=min_opacity,
+        )
 
         # render_fields' underlying activation (sigmoid/exp/normalize) runs
         # on this already-culled candidate set, not the full model -- see
@@ -249,6 +257,9 @@ class SplatRenderer:
         colors = self._compute_colors(means3D[:n_full], shs, camera)
         colors = blend_proxy_colors(colors, proxy_idx, self._proxy_features_dc_gpu)
         lap("sh_eval")
+
+        scales, opacity = apply_render_mode(render_mode, scales, opacity, point_size)
+        lap("render_mode")
 
         raster_settings = self._settings_cls(
             image_height=int(camera.height),
@@ -278,12 +289,13 @@ class SplatRenderer:
         )
         lap("rasterize")
 
-        alpha = allmap[_ALPHA_OFFSET:_ALPHA_OFFSET + 1]
-        depth = torch.nan_to_num(
-            allmap[_DEPTH_OFFSET:_DEPTH_OFFSET + 1] / alpha, nan=0.0, posinf=0.0, neginf=0.0
-        )
+        depth, extras = extract_depth_and_extras(allmap, depth_ratio, self.with_extras)
         lap("depth_extract")
         return RenderOutput(
-            rgb=rendered_image, depth=depth.squeeze(0),
+            rgb=rendered_image, depth=depth,
             num_rendered=self.last_visible_count,
+            alpha=extras.alpha if extras else None,
+            normal=extras.normal if extras else None,
+            middepth=extras.middepth if extras else None,
+            distortion=extras.distortion if extras else None,
         )

@@ -105,3 +105,19 @@ def visible_point_mask_screen_size_torch(
     pixel_radius = focal * world_radius / safe_depth
 
     return (depth <= 0) | (pixel_radius >= min_pixel_radius)
+
+
+def visible_point_mask_bounds_torch(
+    xyz: torch.Tensor,
+    bounds: tuple[tuple[float, float], tuple[float, float], tuple[float, float]],
+) -> torch.Tensor:
+    """Axis-aligned world-space AABB filter ("crop box"): keeps points whose
+    center falls within `bounds = ((xmin, xmax), (ymin, ymax), (zmin,
+    zmax))`. A display filter, not a visibility test -- combine with the
+    frustum/octree mask via `&` rather than using it as a replacement for
+    one. Same "narrow-phase mask on an already leaf-gathered candidate set"
+    shape as `visible_point_mask_exact_torch`/`visible_point_mask_screen_size_torch`."""
+    (xmin, xmax), (ymin, ymax), (zmin, zmax) = bounds
+    lo = xyz.new_tensor([xmin, ymin, zmin])
+    hi = xyz.new_tensor([xmax, ymax, zmax])
+    return ((xyz >= lo) & (xyz <= hi)).all(dim=-1)
