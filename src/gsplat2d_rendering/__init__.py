@@ -17,8 +17,15 @@ from gsplat2d_rendering.culling import (
     load_or_build_octree,
     save_octree,
 )
-from gsplat2d_rendering.io import detect_sh_degree, load_gaussian_model, resolve_ply_path
-from gsplat2d_rendering.model import GaussianModel
+from gsplat2d_rendering.io import (
+    ChunkedPlyReader,
+    detect_sh_degree,
+    load_gaussian_model,
+    load_gaussian_model_range,
+    resolve_ply_path,
+    write_gaussian_model,
+)
+from gsplat2d_rendering.model import GaussianModel, concat_gaussian_models
 from gsplat2d_rendering.render import (
     Bounds,
     Renderer,
@@ -30,7 +37,11 @@ from gsplat2d_rendering.render import (
 
 __all__ = [
     "GaussianModel",
+    "concat_gaussian_models",
     "load_gaussian_model",
+    "write_gaussian_model",
+    "load_gaussian_model_range",
+    "ChunkedPlyReader",
     "detect_sh_degree",
     "resolve_ply_path",
     "Camera",

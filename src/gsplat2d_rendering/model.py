@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 import torch
 
-from gsplat2d_rendering._log import info
+from gsplat2d_rendering._log import info, verbose
 
 
 @dataclass
@@ -97,7 +97,7 @@ class GaussianModel:
             self.raw_rotation[mask], self.features_dc[mask], self.features_rest[mask],
         )
 
-    def reorder_(self, perm: torch.Tensor) -> None:
+    def reorder_(self, perm: torch.Tensor, verbose_log: bool = False) -> None:
         """In-place permutation of every raw per-splat tensor -- called
         once at load time (not per-frame) to put the model into an
         octree's leaf-contiguous order (perm = that octree's
@@ -107,11 +107,51 @@ class GaussianModel:
         gather possible instead of boolean-mask indexing -- see
         culling/octree.py's module docstring for why that distinction
         matters: boolean masking is O(N) to compact regardless of how few
-        points survive, contiguous slicing of a pre-sorted array is not."""
+        points survive, contiguous slicing of a pre-sorted array is not.
+
+        verbose_log routes the summary line through verbose() instead of
+        info(): a one-off whole-model reorder at load time is worth NORMAL
+        visibility, but a caller reordering the same model repeatedly (e.g.
+        chunk streaming re-reordering its composited model on every rebuild)
+        would otherwise flood NORMAL-level output with one line per rebuild."""
         self.xyz = self.xyz[perm].contiguous()
         self.raw_opacity = self.raw_opacity[perm].contiguous()
         self.raw_scaling = self.raw_scaling[perm].contiguous()
         self.raw_rotation = self.raw_rotation[perm].contiguous()
         self.features_dc = self.features_dc[perm].contiguous()
         self.features_rest = self.features_rest[perm].contiguous()
-        info(__name__, f"Reordered {self.num_points:,} splats to octree leaf-contiguous order")
+        log_fn = verbose if verbose_log else info
+        log_fn(__name__, f"Reordered {self.num_points:,} splats to octree leaf-contiguous order")
+
+
+def concat_gaussian_models(models: list[GaussianModel]) -> GaussianModel:
+    """Concatenates several models' per-splat tensors into one, in list
+    order -- e.g. for a caller that keeps a model resident as separate
+    spatial pieces (chunks) and needs one combined model to hand to a
+    renderer. Raises rather than silently coercing on a mismatched device
+    or SH degree across inputs: either signals a caller bug (chunks loaded
+    onto different devices, or from files at different compression levels),
+    not something with one obviously-correct fallback."""
+    if not models:
+        raise ValueError("concat_gaussian_models: empty model list")
+    device = models[0].xyz.device
+    degree = models[0].active_sh_degree
+    k = models[0].features_rest.shape[1]
+    for m in models[1:]:
+        if m.xyz.device != device:
+            raise ValueError(
+                f"concat_gaussian_models: device mismatch ({m.xyz.device} vs {device})"
+            )
+        if m.features_rest.shape[1] != k:
+            raise ValueError(
+                f"concat_gaussian_models: SH degree mismatch ({m.active_sh_degree} vs {degree})"
+            )
+    return GaussianModel(
+        xyz=torch.cat([m.xyz for m in models], dim=0),
+        raw_opacity=torch.cat([m.raw_opacity for m in models], dim=0),
+        raw_scaling=torch.cat([m.raw_scaling for m in models], dim=0),
+        raw_rotation=torch.cat([m.raw_rotation for m in models], dim=0),
+        features_dc=torch.cat([m.features_dc for m in models], dim=0),
+        features_rest=torch.cat([m.features_rest for m in models], dim=0),
+        active_sh_degree=degree,
+    )

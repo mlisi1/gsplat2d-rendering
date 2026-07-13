@@ -81,7 +81,7 @@ class SplatRenderer:
                  culling_narrow_phase: bool = False, culling_margin: float = 0.0,
                  screen_size_culling: bool = False, screen_size_min_pixels: float = 1.0,
                  octree_lod: bool = False, lod_leaf_pixel_threshold: float = 16.0,
-                 with_extras: bool = False):
+                 with_extras: bool = False, verbose_log: bool = False):
         from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
         self._settings_cls = GaussianRasterizationSettings
         self._rasterizer_cls = GaussianRasterizer
@@ -131,12 +131,22 @@ class SplatRenderer:
                 (self._node_aabbs_gpu[:, 3:] - self._node_aabbs_gpu[:, :3]) * 0.5
             ).amax(dim=-1, keepdim=True)
 
+        # verbose_log routes these startup-summary lines through verbose()
+        # instead of info(): constructing one SplatRenderer for a model load
+        # is a rare, notable event worth NORMAL visibility, but a caller
+        # rebuilding this instance repeatedly (e.g. chunk streaming's
+        # per-composition-change rebuild) would otherwise flood NORMAL-level
+        # output with one line per rebuild -- SplatRenderer's own
+        # constructor-only octree/culling_enabled is exactly why such a
+        # caller has to reconstruct rather than mutate in place, see this
+        # class's own docstring.
+        log_fn = verbose if verbose_log else info
         if self._has_octree:
-            info(__name__, f"Culling enabled: {len(octree.node_aabbs):,} leaf nodes")
+            log_fn(__name__, f"Culling enabled: {len(octree.node_aabbs):,} leaf nodes")
         elif not culling_enabled:
-            info(__name__, "Culling disabled: culling_enabled=False")
+            log_fn(__name__, "Culling disabled: culling_enabled=False")
         else:
-            info(__name__, "Culling disabled: no octree provided")
+            log_fn(__name__, "Culling disabled: no octree provided")
         if octree_lod:
             if self._proxy_xyz_gpu is not None:
                 verbose(__name__, f"LOD enabled: {len(octree.node_aabbs):,} leaf proxies "

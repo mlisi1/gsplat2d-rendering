@@ -47,7 +47,14 @@ class Octree:
         return self.proxy_xyz is not None
 
 
-def build_octree(xyz: np.ndarray, leaf_max: int = 5000, max_depth: int = 8) -> Octree:
+def build_octree(xyz: np.ndarray, leaf_max: int = 5000, max_depth: int = 8,
+                  verbose_log: bool = False) -> Octree:
+    """verbose_log routes the "Built octree" summary line through verbose()
+    instead of info(): building one octree over a whole model is a rare,
+    notable event worth NORMAL visibility, but a caller building many small
+    per-partition octrees (e.g. chunk streaming building one per chunk, up
+    to hundreds per session) would otherwise flood NORMAL-level output with
+    one line per chunk."""
     t0 = time.perf_counter()
     n = xyz.shape[0]
     leaves_indices: list[np.ndarray] = []
@@ -89,8 +96,9 @@ def build_octree(xyz: np.ndarray, leaf_max: int = 5000, max_depth: int = 8) -> O
         node_aabbs = np.zeros((0, 6), dtype=np.float32)
 
     elapsed = time.perf_counter() - t0
-    info(__name__, f"Built octree: {n:,} points -> {len(node_aabbs):,} leaf nodes "
-                    f"(leaf_max={leaf_max:,}) in {elapsed:.2f}s")
+    log_fn = verbose if verbose_log else info
+    log_fn(__name__, f"Built octree: {n:,} points -> {len(node_aabbs):,} leaf nodes "
+                      f"(leaf_max={leaf_max:,}) in {elapsed:.2f}s")
     _log_leaf_stats(node_aabbs, node_offsets)
     return Octree(node_aabbs=node_aabbs, node_offsets=node_offsets, flat_indices=flat_indices)
 
