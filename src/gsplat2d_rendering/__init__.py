@@ -34,8 +34,10 @@ from gsplat2d_rendering.render import (
     depth_to_normal,
     depth_to_points,
 )
+from gsplat2d_rendering.streaming import ChunkManager
 
 __all__ = [
+    "ChunkManager",
     "GaussianModel",
     "concat_gaussian_models",
     "load_gaussian_model",

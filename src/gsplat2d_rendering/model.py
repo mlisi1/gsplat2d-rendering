@@ -18,7 +18,7 @@ when a tensor is already float32, so this costs nothing when uncompressed.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import torch
 
@@ -95,6 +95,27 @@ class GaussianModel:
         return self._activate(
             self.xyz[mask], self.raw_opacity[mask], self.raw_scaling[mask],
             self.raw_rotation[mask], self.features_dc[mask], self.features_rest[mask],
+        )
+
+    def to(self, device: str | torch.device) -> "GaussianModel":
+        """Returns a new instance with every raw tensor moved to `device` --
+        a plain field-by-field `dataclasses.replace`, generalized so callers
+        don't each hand-roll the same six-line move. This used to be
+        duplicated independently in more than one place (a downstream
+        project's own CPU-parse/CUDA-install split, and again inside chunk
+        streaming's background transition path) -- one obvious place for it
+        beats several private copies that all have to stay in sync by hand
+        whenever a field is added to this dataclass. No-op cost when a
+        tensor is already on `device`: torch's own `.to()` returns the same
+        tensor without copying in that case."""
+        return replace(
+            self,
+            xyz=self.xyz.to(device),
+            raw_opacity=self.raw_opacity.to(device),
+            raw_scaling=self.raw_scaling.to(device),
+            raw_rotation=self.raw_rotation.to(device),
+            features_dc=self.features_dc.to(device),
+            features_rest=self.features_rest.to(device),
         )
 
     def reorder_(self, perm: torch.Tensor, verbose_log: bool = False) -> None:
