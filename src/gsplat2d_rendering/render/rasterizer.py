@@ -104,7 +104,24 @@ class SplatRenderer:
         self.with_extras = with_extras
         self.background = torch.zeros(3, dtype=torch.float32, device=device)
         self.last_visible_count = model.num_points
-        self.profiler = Profiler(sync_fn=self._sync)
+        # A plain closure over `device` (the local parameter, not
+        # `self.device`) rather than the bound method `self._sync` --
+        # `self._sync` would hold a reference back to this very instance via
+        # its `__self__`, creating SplatRenderer -> profiler -> sync_fn ->
+        # SplatRenderer, a genuine reference cycle that plain refcounting can
+        # never free (only Python's cyclic GC can, and only if/when it
+        # happens to run). _sync()'s only real dependency is the device
+        # string, which is immutable for this instance's lifetime, so
+        # capturing it directly avoids the cycle at its root instead of
+        # working around it with periodic gc.collect() calls -- verified: a
+        # caller that discards and reconstructs many SplatRenderer instances
+        # in a tight loop (e.g. Kestrel's chunk streaming) now frees each one
+        # via ordinary refcounting the instant the last external reference
+        # drops, with no gc involvement needed at all.
+        def _sync_fn(_device: str = device) -> None:
+            if _device.startswith("cuda") and torch.cuda.is_available():
+                torch.cuda.synchronize()
+        self.profiler = Profiler(sync_fn=_sync_fn)
 
         self._has_octree = culling_enabled and octree is not None
         self._node_aabbs_gpu = None
