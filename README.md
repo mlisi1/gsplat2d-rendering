@@ -14,22 +14,22 @@ downstream project.
 ## Install
 
 ```bash
-git submodule update --init --recursive
-pip install -e .                                          # this library
-pip install -e third_party/diff-surfel-rasterization      # the CUDA kernel
+TORCH_CUDA_ARCH_LIST="8.6;12.0" pip install --no-build-isolation -e .
 ```
 
-The CUDA kernel build needs `nvcc` and a matching PyTorch/CUDA install, same
-as any other Gaussian-Splatting CUDA extension.
+This builds the library's own CUDA rasterizer (`gsplat2d_rendering._raster`)
+against the installed PyTorch, so it needs `nvcc` matching PyTorch's CUDA
+version (`CUDA_HOME` pointing at it), and `--no-build-isolation` so the
+build sees that PyTorch. Set `TORCH_CUDA_ARCH_LIST` to your GPUs' compute
+capabilities (e.g. 8.6 Ampere, 8.9 Ada, 12.0 Blackwell, 8.7 Jetson Orin).
 
-### License note
+### License
 
-This repo's own code has no license restriction beyond what you and your
-downstream projects need. `third_party/diff-surfel-rasterization`
-(vendored as a git submodule, not copied) is Inria's Gaussian-Splatting
-research kernel and carries **its own non-commercial research license** —
-see that submodule's `LICENSE.md`. Anything built on top of this library
-that renders through that kernel inherits that restriction.
+Apache-2.0 (see `LICENSE` and `NOTICE`). The rasterizer is this project's
+own, written from the 2D/3D Gaussian Splatting papers (provenance in
+`docs/rasterizer.md`); there is no non-commercial dependency. `sh.py`'s
+spherical-harmonics constants are BSD-2-Clause (PlenOctree), noted in
+`NOTICE`.
 
 ## Quickstart
 
@@ -75,6 +75,30 @@ training pipeline stores poses in. If your pose source uses a different
 convention (e.g. a ROS `base_link`, or a Z-up robotics frame), resolve that
 in your own project before building a `Camera`; this library has no
 opinion on it.
+
+`Intrinsics(width, height, fx, fy, cx=None, cy=None)` takes a principal
+point. It defaults to the image centre, with pixel `(i, j)` centred at
+`(i + 0.5, j + 0.5)`.
+
+## Rendering options
+
+- **Low-pass** (`surfel_lowpass` in `load_gaussian_model`, default on): the
+  2DGS screen-space filter that keeps sub-pixel discs from vanishing. A
+  model must be rendered the way it was trained. Models from the original
+  2DGS code, and spirula models trained before 2026-11-18, used it. Newer
+  spirula models don't. Nothing in the PLY says which, so pass it when you
+  know and keep it with the model.
+- **Extras** (`with_extras=True`): alpha, camera-space normal, and median
+  depth. `render(..., depth_ratio=r)` blends expected depth toward median
+  depth.
+- **`exact_tiles`**: bins each splat only to the tiles its ellipse touches.
+  Same image, fewer splat-tile pairs.
+- **`max_sigma`**: truncates splats at that many standard deviations
+  instead of at their exact `alpha_min` contour. Faster, with a slightly
+  different image.
+- **`near_crossing`**: draws the in-front part of discs that cross the near
+  plane. Off by default: the previous renderer never drew them, and each
+  one costs a whole-image footprint.
 
 ## Rendering large scenes
 
@@ -208,9 +232,11 @@ src/gsplat2d_rendering/
 │   ├── frustum.py         GPU-native frustum + screen-size visibility tests
 │   └── cache.py           On-disk octree index cache wrapper
 ├── lod.py                 Two-level LOD: per-leaf moment-matched proxy splats
+├── _raster/                The surfel rasterizer: CUDA core (no torch) + torch binding
+│                           (math and provenance: docs/rasterizer.md)
 ├── render/
-│   ├── rasterizer.py       SplatRenderer: direct diff-surfel-rasterization wrapper
-│   ├── lod_blend.py        Leaf LOD selection + coarse-leaf proxy blending
+│   ├── rasterizer.py       SplatRenderer: culling/LOD/filters around the rasterizer
+│   ├── lod_blend.py        Leaf LOD selection + coarse-leaf proxies
 │   └── pipeline.py         Renderer: Camera in, RGB/depth numpy arrays out
 └── streaming/              Load-time chunk streaming for scenes too large to load whole
     ├── manager.py           ChunkManager: the public entry point, composes the below

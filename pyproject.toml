@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gsplat2d-rendering"
 version = "0.1.0"
-description = "General-purpose rendering library for trained 2D Gaussian Splatting (surfel) models, wrapping diff-surfel-rasterization with culling/LOD/compression for large scenes."
+description = "General-purpose rendering library for trained 2D Gaussian Splatting (surfel) models: its own render-only CUDA rasterizer plus culling/LOD/compression for large scenes."
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 dependencies = [
