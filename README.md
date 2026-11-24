@@ -23,6 +23,9 @@ version (`CUDA_HOME` pointing at it), and `--no-build-isolation` so the
 build sees that PyTorch. Set `TORCH_CUDA_ARCH_LIST` to your GPUs' compute
 capabilities (e.g. 8.6 Ampere, 8.9 Ada, 12.0 Blackwell, 8.7 Jetson Orin).
 
+The rasterizer core also builds on its own with CMake, with no Python or
+torch, for C++ users such as Gazebo plugins. See `docs/rasterizer.md`.
+
 ### License
 
 Apache-2.0 (see `LICENSE` and `NOTICE`). The rasterizer is this project's

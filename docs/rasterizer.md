@@ -30,8 +30,24 @@ _raster/
         ├── preprocess.cu    per-splat transform, cull, colour, footprint
         ├── binning.cu       pair emission, tile ranges
         ├── raster.cu        per-tile compositing
-        └── render.cu        surfel_render: preprocess -> scan -> emit -> sort -> ranges -> raster
+        ├── render.cu        surfel_render: preprocess -> scan -> emit -> sort -> ranges -> raster
+        ├── scratch_arena.*  growing device-memory arena for C++ callers
+        └── CMakeLists.txt   standalone build + installable CMake package
 ```
+
+### C++ use (no Python, no torch)
+
+```bash
+cmake -S src/gsplat2d_rendering/_raster/csrc/core -B build \
+      -DCMAKE_CUDA_ARCHITECTURES="86;87;120" [-DBUILD_SHARED_LIBS=ON]
+cmake --build build && cmake --install build --prefix <prefix>
+```
+
+A consumer calls `find_package(surfel_raster)` and links
+`surfel_raster::surfel_raster`. `tests/cpp/` is such a consumer: it renders
+one disc through `surfel_render` with a `ScratchArena`. Build it against
+the install prefix with `-DCMAKE_PREFIX_PATH=<prefix>`, and its exit code
+says pass or fail.
 
 Render only: no backward pass, no gradients, no training buffers.
 
@@ -122,7 +138,14 @@ The ellipse is convex, so its leftmost point over the band is the left
 end at `ya` or `yb`, or the global leftmost point `(-sqrt(M11), -M12/sqrt(M11))`
 if that lies in the band. The rightmost point is found the same way.
 Count and emit both call `for_each_tile` (`preprocess.cuh`); if they
-disagreed, emit would write past the scanned offsets. It is off when
+disagreed, emit would write past the scanned offsets.
+
+Measured on a 7.2M-splat model at 1920×1080 with low-pass off, it cuts
+pairs by about 20% (8.7M to 7.0M) but saves no time (16.7 against 16.3 ms):
+the per-row span math costs about what the pairs save. With low-pass on
+(the default) it does nothing yet. Extending it to the blob union is
+possible, since the projected centre lies inside the ellipse, so the
+row-span hull is exact enough. It stays off by default until that pays. It is off when
 low-pass is on (the union is not one conic) and for near-plane-crossing
 splats.
 

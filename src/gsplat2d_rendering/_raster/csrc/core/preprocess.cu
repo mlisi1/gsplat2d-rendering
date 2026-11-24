@@ -148,7 +148,7 @@ __global__ void preprocess_kernel(SurfelInputs in, SurfelCamera cam, SurfelOptio
     ec.xc = xc; ec.yc = yc; ec.m12 = m12; ec.m22 = m22;
     ec.hx = sqrt(fmax(m11, 0.0));
     ec.det = fmax(m11 * m22 - m12 * m12, 0.0);
-    ec.pad = footprint_pad(fmax(ec.hx, sqrt(fmax(m22, 0.0))));
+    ec.pad = footprint_pad(fmax((double)ec.hx, sqrt(fmax(m22, 0.0))));
     store_conic(out.conic, i, ec);
   } else if (out.conic) {
     store_conic(out.conic, i, ec);
