@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """General-purpose rendering for trained 2D Gaussian Splatting (surfel)
 models: load a PLY, optionally build an octree for culling/LOD, render from
 any camera pose via diff-surfel-rasterization. See README.md.

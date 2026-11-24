@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from gsplat2d_rendering.render.candidate_filters import Bounds
 from gsplat2d_rendering.render.depth_normal import depth_to_normal, depth_to_points
 from gsplat2d_rendering.render.display_modes import RenderMode

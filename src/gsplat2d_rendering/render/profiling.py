@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Opt-in per-stage timing collection for SplatRenderer/Renderer.
 
 Disabled by default. Each GPU stage boundary costs a `torch.cuda.synchronize()`

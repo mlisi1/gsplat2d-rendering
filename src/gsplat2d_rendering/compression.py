@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """In-memory splat compression, applied right after a PLY is read.
 
 Three levels, the same idea and same real effect as offline PLY-compression

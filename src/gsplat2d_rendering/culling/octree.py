@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Octree spatial index over splat centers: build, save, load.
 
 Standard axis-aligned octree over point positions -- a generic spatial

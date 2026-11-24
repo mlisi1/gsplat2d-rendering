@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Leaf-level LOD selection + coarse-leaf proxy-splat blending for
 SplatRenderer. Split out from rasterizer.py to keep that file focused on
 the core per-frame render flow -- these are free functions operating on the

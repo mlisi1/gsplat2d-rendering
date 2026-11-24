@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Partial (row-range) reads of a 2D-GS PLY, for callers that keep only a
 spatial subset of a model resident at a time (e.g. a disk-backed chunk
 streaming system). Split out of io/ply.py rather than growing that file,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Resolves a user-supplied model path to an actual .ply file.
 
 Accepts either a direct path to a .ply, or a training output directory

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Pure tier-residency math for chunk streaming: given which chunks are
 frustum-visible right now, decide which chunks should be VRAM-resident
 (strict + margin), and which should be RAM-resident, entirely in terms of

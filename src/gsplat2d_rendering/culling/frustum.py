@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """GPU-native frustum/screen-size visibility tests, all torch (not numpy):
 render/rasterizer.py's per-frame gather works from leaf-contiguous index
 ranges (GaussianModel.reorder_ + Octree.node_offsets), not a per-point

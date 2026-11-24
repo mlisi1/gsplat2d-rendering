@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Loads a trained 2D Gaussian Splatting PLY into a GaussianModel.
 
 PLY layout is the 2D-GS training format's own contract (not specific to any

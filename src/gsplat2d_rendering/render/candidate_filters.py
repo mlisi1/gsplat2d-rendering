@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Narrow-phase filters applied to the already leaf-gathered (or brute-force
 full-model) candidate set, right before activation. Split out of
 rasterizer.py's core render() loop -- the filter list has grown from two

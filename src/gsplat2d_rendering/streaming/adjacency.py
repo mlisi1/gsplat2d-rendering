@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Spatial adjacency between disk chunks (coarse Octree leaves -- see
 streaming/manager.py's module docstring for the chunk-streaming feature this
 serves), plus BFS hop-expansion over that graph.

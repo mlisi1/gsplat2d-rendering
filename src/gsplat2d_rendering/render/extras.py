@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """allmap channel extraction beyond depth/alpha, and the 2D-GS
 median/expected depth blend -- split out of rasterizer.py's core render()
 flow (see that file's module docstring for the fixed 7-channel layout this

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """In-memory 2D Gaussian Splat model: raw optimized tensors + the activation
 functions that turn them into renderable quantities.
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Two-level octree LOD: precomputes one merged 'proxy' Gaussian per leaf
 at index-build time, swapped in for a whole leaf's individual splats when
 the leaf's projected screen size is small (see render/rasterizer.py's

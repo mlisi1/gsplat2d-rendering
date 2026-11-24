@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from gsplat2d_rendering.culling.cache import index_cache_path, load_or_build_octree
 from gsplat2d_rendering.culling.frustum import (
     visible_leaf_mask_torch,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Lightweight, print-based logging with 3 verbosity levels and per-module
 tags. Not stdlib `logging`: handlers/formatters/root-logger configuration
 are real ceremony for what every caller here actually wants -- "which of my

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from gsplat2d_rendering.math_utils.rotations import (
     quat_mul,
     quat_normalize,

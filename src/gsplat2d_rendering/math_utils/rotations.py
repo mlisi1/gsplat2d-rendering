@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Quaternion <-> rotation-matrix helpers shared by camera.py and lod.py.
 
 Quaternion order is (x, y, z, w) throughout this module -- the common

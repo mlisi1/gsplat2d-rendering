@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from gsplat2d_rendering.streaming.adjacency import build_chunk_adjacency, bfs_expand, nearest_chunk_id
 from gsplat2d_rendering.streaming.fine_octree import FineOctreeCache
 from gsplat2d_rendering.streaming.manager import ChunkManager

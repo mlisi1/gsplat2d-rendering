@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """ChunkManager: per-frame VRAM/RAM/disk residency for load-time chunk
 streaming of a model too large to load (or keep resident) all at once.
 

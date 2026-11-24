@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """On-disk cache wrapper around octree.py's build_octree -- the entry point
 most callers actually want: load a cached index if present, build (and
 cache) one on request, or return None to mean "culling disabled, render

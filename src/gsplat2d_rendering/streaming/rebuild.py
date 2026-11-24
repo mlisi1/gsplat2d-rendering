@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Throttled, backgrounded rebuild-and-swap scheduler: runs a caller-supplied
 `stitch_fn` (assemble one composited result from whatever's currently
 resident) on a timer, off the calling thread, and hands the result back

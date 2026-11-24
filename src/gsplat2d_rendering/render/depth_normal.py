@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Depth map -> world-space points -> per-pixel surface normal, via central
 differences on the unprojected point grid. Ported from 2D-GS's reference
 implementation (Huang et al. 2024, utils/point_utils.py) so callers don't

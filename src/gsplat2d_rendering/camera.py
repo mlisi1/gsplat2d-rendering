@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Camera pose -> view/projection matrices, in the exact convention
 diff-surfel-rasterization's CUDA kernel expects: row-major matrices,
 transposed relative to the textbook column-vector form

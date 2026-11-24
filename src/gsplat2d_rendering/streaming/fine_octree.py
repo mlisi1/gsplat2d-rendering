@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Per-chunk fine-grained culling octree cache + stitching, for a caller
 that keeps a large model resident as separate spatial chunks (see
 manager.py) but still wants per-frame octree culling over whatever

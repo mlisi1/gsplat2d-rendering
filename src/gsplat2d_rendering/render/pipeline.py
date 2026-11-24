@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Narrow public entry point: a built Camera in, RGB (+ depth) out as plain
 numpy arrays. No project-specific types -- callers own pose/intrinsics
 conventions and image-processing decisions (JPEG quality, distortion,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Point-cloud / disk display modes: not real rasterizer kernel modes (the
 CUDA kernel only ever evaluates a Gaussian falloff -- see rasterizer.py's
 module docstring), so both are approximated by overriding scale/opacity on

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Bounded background worker pool for chunk streaming's disk reads. Generic
 over what "read a chunk" means (`load_fn`) and what a caller wants to tag a
 transition with (`tag`, e.g. a compression level) -- this module only owns

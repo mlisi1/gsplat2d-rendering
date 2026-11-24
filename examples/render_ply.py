@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 #!/usr/bin/env python3
 """Minimal end-to-end example: load a trained 2D-GS PLY, build/load an
 octree index for culling, render one frame from an orbit camera, save it.

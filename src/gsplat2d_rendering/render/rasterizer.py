@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Wraps diff-surfel-rasterization directly: SH evaluation + the CUDA
 tile-sort/alpha-composite kernel + extraction of depth (and, opt-in, the
 kernel's other extra channels) from its extra-channels output buffer.
