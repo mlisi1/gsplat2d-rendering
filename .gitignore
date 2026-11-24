@@ -6,3 +6,4 @@ dist/
 .gsplat2d_rendering/
 *.idx.npz
 *.md
+*.so
