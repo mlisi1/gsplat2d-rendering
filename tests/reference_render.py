@@ -29,7 +29,8 @@ def reference_render(
     means, quats, log_scales, opacity_logits, features_dc, features_rest, sh_degree, *,
     w2c, fx, fy, cx, cy, width, height, campos, near_z=0.01,
     lowpass=True, aux=False, background=(0.0, 0.0, 0.0),
-    alpha_min=1.0 / 255.0, alpha_max=0.99, t_min=1e-4,
+    alpha_min=1.0 / 255.0, alpha_max=0.99, t_min=1e-4, max_sigma=0.0,
+    near_crossing=False,
 ):
     """Same arguments as gsplat2d_rendering._raster.rasterize (minus the
     performance-only flags). Returns a dict of float64 CPU tensors:
@@ -69,6 +70,12 @@ def reference_render(
     centre = torch.stack([fx * p[:, 0] / p[:, 2] + cx, fy * p[:, 1] / p[:, 2] + cy], -1)
 
     keep = (o >= alpha_min) & (p[:, 2] > near_z)
+    if not near_crossing:
+        r2 = 2.0 * torch.log(o / alpha_min)
+        if max_sigma > 0:
+            r2 = r2.clamp(max=max_sigma * max_sigma)
+        ez = ((s[:, 0] * t_u[:, 2]) ** 2 + (s[:, 1] * t_v[:, 2]) ** 2).sqrt()
+        keep &= p[:, 2] - r2.clamp_min(0).sqrt() * ez > near_z
     idx = torch.nonzero(keep, as_tuple=True)[0]
     # Stable sort on the float32 depth: the kernel sorts float32 bits with a
     # stable radix sort, so ties keep splat-index order.
@@ -104,6 +111,8 @@ def reference_render(
             rho = torch.where(use_px, rho_px, rho)
             tau = torch.where(use_px, p[j, 2], tau)
         ok = ~done & torch.isfinite(rho)
+        if max_sigma > 0:
+            ok &= rho <= max_sigma * max_sigma
         alpha = torch.clamp(o[j] * torch.exp(-0.5 * torch.where(ok, rho, torch.zeros_like(rho))),
                             max=alpha_max)
         ok &= alpha >= alpha_min

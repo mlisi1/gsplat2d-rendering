@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Camera pose -> view/projection matrices, in the exact convention
-diff-surfel-rasterization's CUDA kernel expects: row-major matrices,
-transposed relative to the textbook column-vector form
-(`world_view_transform = w2c.T`, `full_proj_transform = (w2c @ P).T`) --
-this is the standard Gaussian-Splatting-family camera convention, required
-for the kernel to interpret the matrices correctly, not a choice made here.
+"""Camera pose + pinhole intrinsics. The rasterizer reads the host-side
+`w2c`/`fx`/`fy`/`cx`/`cy`/`campos` values directly (no GPU->host sync per
+frame). `world_view_transform`/`full_proj_transform` are kept for the
+culling code (culling/frustum.py, render/lod_blend.py) in the row-major,
+transposed layout it was written against (`world_view_transform = w2c.T`,
+`full_proj_transform = (w2c @ P).T`); `P` includes the principal-point
+offset, so frustum culling agrees with the image when `cx != width/2`.
 
 Cameras use the optical-frame axis convention (x-right, y-down, z-forward),
 matching OpenCV/COLMAP -- the convention every Gaussian-Splatting training
@@ -14,10 +15,8 @@ y-down optical frame lookup, or a robot base-frame pose composed with a
 fixed camera-mount transform) -- this module has no opinion on where poses
 come from, only what it does with one once it has it.
 
-Principal-point offset is NOT modeled: the projection matrix is built from
-fov alone (derived from fx/fy), implicitly assuming cx=width/2, cy=height/2.
-This is a limitation of the upstream CUDA rasterizer itself (its projection
-matrix has no cx/cy term).
+Pixel (i, j) is centred at (i + 0.5, j + 0.5), so a centred principal point
+is (width/2, height/2).
 """
 from __future__ import annotations
 
@@ -33,11 +32,19 @@ ZFAR_DEFAULT = 100.0
 
 @dataclass(frozen=True)
 class Intrinsics:
-    """Pinhole intrinsics. `fx`/`fy` are focal lengths in pixels."""
+    """Pinhole intrinsics in pixels. `cx`/`cy` default to the image centre."""
     width: int
     height: int
     fx: float
     fy: float
+    cx: float | None = None
+    cy: float | None = None
+
+    def __post_init__(self):
+        if self.cx is None:
+            object.__setattr__(self, "cx", self.width / 2.0)
+        if self.cy is None:
+            object.__setattr__(self, "cy", self.height / 2.0)
 
     @property
     def fov_x(self) -> float:
@@ -70,9 +77,16 @@ class Camera:
     height: int
     fov_x: float
     fov_y: float
-    world_view_transform: torch.Tensor   # [4, 4]
-    full_proj_transform: torch.Tensor    # [4, 4]
+    world_view_transform: torch.Tensor   # [4, 4], culling only, see module docstring
+    full_proj_transform: torch.Tensor    # [4, 4], culling only
     camera_center: torch.Tensor          # [3]
+    fx: float = 0.0
+    fy: float = 0.0
+    cx: float = 0.0
+    cy: float = 0.0
+    znear: float = ZNEAR_DEFAULT
+    w2c: tuple[float, ...] = ()          # row-major 3x4, host side
+    campos: tuple[float, ...] = ()       # world camera centre, host side
 
     @staticmethod
     def from_w2c(
@@ -134,7 +148,8 @@ class Camera:
         intrinsics: Intrinsics, znear: float, zfar: float, device: str,
     ) -> "Camera":
         world_view = _world_to_view_transposed(r_w2c, t_w2c)
-        full_proj = world_view @ _projection_transposed(intrinsics.fov_x, intrinsics.fov_y, znear, zfar)
+        full_proj = world_view @ _projection_transposed(intrinsics, znear, zfar)
+        w2c = np.concatenate([np.asarray(r_w2c, np.float64), np.asarray(t_w2c, np.float64)[:, None]], 1)
         return Camera(
             width=intrinsics.width,
             height=intrinsics.height,
@@ -143,6 +158,10 @@ class Camera:
             world_view_transform=torch.tensor(world_view, dtype=torch.float32, device=device),
             full_proj_transform=torch.tensor(full_proj, dtype=torch.float32, device=device),
             camera_center=torch.tensor(camera_center, dtype=torch.float32, device=device),
+            fx=float(intrinsics.fx), fy=float(intrinsics.fy),
+            cx=float(intrinsics.cx), cy=float(intrinsics.cy), znear=float(znear),
+            w2c=tuple(float(v) for v in w2c.reshape(-1)),
+            campos=tuple(float(v) for v in np.asarray(camera_center, np.float64).reshape(-1)),
         )
 
 
@@ -153,17 +172,20 @@ def _world_to_view_transposed(r_w2c: np.ndarray, t_w2c: np.ndarray) -> np.ndarra
     return m.T
 
 
-def _projection_transposed(fov_x: float, fov_y: float, znear: float, zfar: float) -> np.ndarray:
-    tan_half_x = math.tan(fov_x * 0.5)
-    tan_half_y = math.tan(fov_y * 0.5)
-    top, bottom = tan_half_y * znear, -tan_half_y * znear
-    right, left = tan_half_x * znear, -tan_half_x * znear
+def _projection_transposed(intrinsics: Intrinsics, znear: float, zfar: float) -> np.ndarray:
+    # Asymmetric frustum through the image edges; with y down, "bottom" is
+    # the top image row.
+    left = -intrinsics.cx / intrinsics.fx * znear
+    right = (intrinsics.width - intrinsics.cx) / intrinsics.fx * znear
+    bottom = -intrinsics.cy / intrinsics.fy * znear
+    top = (intrinsics.height - intrinsics.cy) / intrinsics.fy * znear
 
     p = np.zeros((4, 4), dtype=np.float64)
     p[0, 0] = 2.0 * znear / (right - left)
     p[1, 1] = 2.0 * znear / (top - bottom)
-    p[0, 2] = (right + left) / (right - left)
-    p[1, 2] = (top + bottom) / (top - bottom)
+    # Minus: the camera looks down +z, so w = +z (OpenGL's -z form has +).
+    p[0, 2] = -(right + left) / (right - left)
+    p[1, 2] = -(top + bottom) / (top - bottom)
     p[3, 2] = 1.0
     p[2, 2] = zfar / (zfar - znear)
     p[2, 3] = -(zfar * znear) / (zfar - znear)

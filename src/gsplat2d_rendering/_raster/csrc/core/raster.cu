@@ -26,6 +26,7 @@ __global__ void __launch_bounds__(kBlock)
   float T = 1.f, cr = 0.f, cg = 0.f, cb = 0.f, dz = 0.f;
   float nx = 0.f, ny = 0.f, nz = 0.f, zmed = 0.f;
   bool done = !inside;
+  const float rho_max = opt.max_sigma > 0.f ? opt.max_sigma * opt.max_sigma : INFINITY;
 
   for (int base = 0; base < todo; base += kBlock) {
     if (__syncthreads_count(done) == kBlock) break;
@@ -58,7 +59,7 @@ __global__ void __launch_bounds__(kBlock)
           tau = b.z;
         }
       }
-      if (!(rho < INFINITY)) continue;
+      if (!(rho <= rho_max)) continue;
       float alpha = fminf(opt.alpha_max, qc.w * expf(-0.5f * rho));
       if (alpha < opt.alpha_min) continue;
       float t_next = T * (1.f - alpha);

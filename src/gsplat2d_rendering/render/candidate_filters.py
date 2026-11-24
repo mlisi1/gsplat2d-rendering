@@ -21,7 +21,6 @@ unconditionally, octree or not.
 """
 from __future__ import annotations
 
-import math
 from typing import Callable
 
 import torch
@@ -60,11 +59,9 @@ def apply_candidate_filters(
     lap("narrow_cull")
 
     if screen_size and has_leaf_gather:
-        focal_x = camera.width / (2.0 * math.tan(camera.fov_x * 0.5))
-        focal_y = camera.height / (2.0 * math.tan(camera.fov_y * 0.5))
         keep = visible_point_mask_screen_size_torch(
             raw[_XYZ].float(), torch.exp(raw[_SCALING].float()), camera.world_view_transform,
-            focal_x, focal_y, min_pixel_radius=min_pixel_radius,
+            camera.fx, camera.fy, min_pixel_radius=min_pixel_radius,
         )
         raw = tuple(field[keep] for field in raw)
     lap("screen_size_cull")

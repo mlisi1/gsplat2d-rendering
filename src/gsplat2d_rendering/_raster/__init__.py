@@ -40,13 +40,19 @@ def rasterize(
     near_z: float = 0.01, lowpass: bool = True, aux: bool = False,
     exact_tiles: bool = False, rgb8: bool = False, background=(0.0, 0.0, 0.0),
     alpha_min: float = 1.0 / 255.0, alpha_max: float = 0.99, t_min: float = 1e-4,
+    max_sigma: float = 0.0, near_crossing: bool = False,
 ) -> RasterOutput:
     """`w2c`: [3, 4] world-to-camera (x_cam = R x_world + t, OpenCV axes),
     any array-like; `campos`: world camera centre (SH view directions).
     Both are read on the host, so pass CPU values to avoid a sync.
     `sh_degree=-1` means `features_dc` holds final RGB colours.
     `exact_tiles` bins each splat to the tiles its ellipse actually touches
-    instead of its bounding box: same image, fewer pairs."""
+    instead of its bounding box: same image, fewer pairs. `max_sigma > 0`
+    also cuts each splat off at that many standard deviations (fewer pairs,
+    slightly different image); 0 keeps the exact alpha_min contour.
+    `near_crossing` draws the in-front part of discs whose footprint crosses
+    the near plane; off (default) culls them, which is faster and matches
+    the previous renderer."""
     if _C is None:
         raise ImportError(
             "gsplat2d_rendering._raster._C is not built; run "
@@ -69,7 +75,7 @@ def rasterize(
     rgb, depth, alpha, normal, median, out8, pairs = _C.rasterize(
         *ins, int(sh_degree), w2c_flat, [float(fx), float(fy), float(cx), float(cy)],
         int(width), int(height), float(near_z), campos_l, bool(lowpass), bool(aux),
-        bool(exact_tiles), bool(rgb8), [float(alpha_min), float(alpha_max), float(t_min)],
+        bool(exact_tiles), bool(near_crossing), bool(rgb8), [float(alpha_min), float(alpha_max), float(t_min), float(max_sigma)],
         [float(b) for b in background],
     )
     return RasterOutput(rgb=rgb, depth=depth, alpha=alpha,

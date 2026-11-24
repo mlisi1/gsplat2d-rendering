@@ -44,7 +44,8 @@ std::vector<torch::Tensor> rasterize(torch::Tensor means, torch::Tensor quats,
                                      int64_t sh_degree, std::vector<double> w2c,
                                      std::vector<double> intr, int64_t width, int64_t height,
                                      double near_z, std::vector<double> campos, bool lowpass,
-                                     bool aux, bool exact_tiles, bool want_rgb8,
+                                     bool aux, bool exact_tiles, bool near_crossing,
+                                     bool want_rgb8,
                                      std::vector<double> thresholds,
                                      std::vector<double> background) {
   TORCH_CHECK(means.is_cuda(), "means must be a CUDA tensor");
@@ -62,7 +63,7 @@ std::vector<torch::Tensor> rasterize(torch::Tensor means, torch::Tensor quats,
   TORCH_CHECK(features_rest.dim() == 3 && features_rest.size(0) == n && features_rest.size(2) == 3,
               "features_rest must be [N,K,3]");
   TORCH_CHECK(w2c.size() == 12 && intr.size() == 4 && campos.size() == 3 &&
-                  thresholds.size() == 3 && background.size() == 3,
+                  thresholds.size() == 4 && background.size() == 3,
               "bad camera/option vector sizes");
   for (auto* t : {&means, &quats, &log_scales, &opacity_logits, &features_dc, &features_rest})
     check(*t, "input", dev);
@@ -95,9 +96,11 @@ std::vector<torch::Tensor> rasterize(torch::Tensor means, torch::Tensor quats,
   opt.lowpass = lowpass;
   opt.aux = aux;
   opt.exact_tiles = exact_tiles;
+  opt.near_crossing = near_crossing;
   opt.alpha_min = (float)thresholds[0];
   opt.alpha_max = (float)thresholds[1];
   opt.t_min = (float)thresholds[2];
+  opt.max_sigma = (float)thresholds[3];
   for (int i = 0; i < 3; ++i) opt.background[i] = (float)background[i];
 
   auto f32 = torch::TensorOptions().dtype(torch::kFloat32).device(dev);

@@ -64,8 +64,10 @@ class ChunkManager:
     def __init__(self, chunked_ply_path: str, manifest: Octree, device: str,
                  vram_margin_hops: int = 0, ram_margin_hops: int = 0,
                  fine_leaf_max: int = 5000, rebuild_throttle_s: float = 0.4,
-                 compression_level: int = 0):
+                 compression_level: int = 0, surfel_lowpass: bool | None = None):
         self.chunked_ply_path = chunked_ply_path
+        # None: per the chunked file's header (see io/ply.py).
+        self.surfel_lowpass = surfel_lowpass
         self.manifest         = manifest
         self.device           = device
         # Adjacency-hop-count residency -- see tiers.py's module docstring
@@ -157,6 +159,7 @@ class ChunkManager:
         return self._reader.read_range(
             start, end - start, device="cpu",
             compression_level=self.compression_level, target_sh_degree=1,
+            surfel_lowpass=self.surfel_lowpass,
         )
 
     def _load_and_prepare_chunk(self, chunk_id: int) -> GaussianModel:

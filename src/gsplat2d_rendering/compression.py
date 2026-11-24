@@ -17,9 +17,9 @@ Level 1: every field genuinely stored as float16 -- halves the model's
          runs in float32 -- render_fields upcasts right after masking,
          before activating, so this produces numerically the same values
          as computing everything in float32 on a once-fp16-rounded input,
-         just with less data actually moved. The rasterizer CUDA kernel
-         itself is hardcoded float32 (third_party/diff-surfel-rasterization),
-         so this never reaches it as fp16 regardless of level.
+         just with less data actually moved. The rasterizer reads fp16
+         attributes directly, so no per-frame float32 copy is made either;
+         positions are upcast to float32 at the rasterizer boundary.
 Level 2: level 1 + SH `f_rest` truncated to `target_sh_degree` (default 1)
          -- real reduction in tensor size and SH-eval cost on top.
 Level 3: level 1 + SH dropped entirely (degree 0, view-independent color

@@ -29,7 +29,6 @@ class RenderResult:
     alpha: np.ndarray | None = None        # (H, W) float32
     normal: np.ndarray | None = None       # (3, H, W) float32, camera-space
     middepth: np.ndarray | None = None     # (H, W) float32
-    distortion: np.ndarray | None = None   # (H, W) float32
 
 
 class Renderer:
@@ -42,7 +41,9 @@ class Renderer:
                  culling_enabled: bool = True, culling_narrow_phase: bool = False,
                  culling_margin: float = 0.0, screen_size_culling: bool = False,
                  screen_size_min_pixels: float = 1.0, octree_lod: bool = False,
-                 lod_leaf_pixel_threshold: float = 16.0, with_extras: bool = False):
+                 lod_leaf_pixel_threshold: float = 16.0, with_extras: bool = False,
+                 exact_tiles: bool = False, max_sigma: float = 0.0,
+                 near_crossing: bool = False):
         self.device = device
         self.with_depth = with_depth
         self._rasterizer = SplatRenderer(
@@ -50,7 +51,8 @@ class Renderer:
             culling_narrow_phase=culling_narrow_phase,
             culling_margin=culling_margin, screen_size_culling=screen_size_culling,
             screen_size_min_pixels=screen_size_min_pixels, octree_lod=octree_lod,
-            lod_leaf_pixel_threshold=lod_leaf_pixel_threshold, with_extras=with_extras)
+            lod_leaf_pixel_threshold=lod_leaf_pixel_threshold, with_extras=with_extras,
+            exact_tiles=exact_tiles, max_sigma=max_sigma, near_crossing=near_crossing)
 
     @property
     def last_visible_count(self) -> int:
@@ -92,9 +94,9 @@ class Renderer:
             output = self._rasterizer.render(
                 camera, render_mode=render_mode, point_size=point_size, sparsity=sparsity,
                 bounds=bounds, min_opacity=min_opacity, depth_ratio=depth_ratio,
+                want_rgb8=True,
             )
-            rgb = (output.rgb.clamp(0., 1.)
-                   .permute(1, 2, 0).mul(255).byte().cpu().numpy())
+            rgb = output.rgb8.cpu().numpy()
             depth = None
             if self.with_depth:
                 depth = output.depth.cpu().numpy().astype(np.float32)
@@ -102,12 +104,10 @@ class Renderer:
             normal = output.normal.cpu().numpy().astype(np.float32) if output.normal is not None else None
             middepth = (output.middepth.cpu().numpy().astype(np.float32)
                         if output.middepth is not None else None)
-            distortion = (output.distortion.cpu().numpy().astype(np.float32)
-                          if output.distortion is not None else None)
             # .cpu() above already blocks until the copy lands, so this lap
             # is timed honestly without an extra synchronize().
             self._rasterizer.profiler.lap("copy_to_cpu")
         return RenderResult(
             rgb=rgb, depth=depth, num_rendered=output.num_rendered,
-            alpha=alpha, normal=normal, middepth=middepth, distortion=distortion,
+            alpha=alpha, normal=normal, middepth=middepth,
         )

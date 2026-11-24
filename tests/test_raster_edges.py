@@ -64,10 +64,19 @@ CASES = {
 @pytest.mark.parametrize("name", sorted(CASES))
 @pytest.mark.parametrize("lowpass", [False, True])
 @pytest.mark.parametrize("exact", [False, True])
-def test_edge_case(name, lowpass, exact):
+@pytest.mark.parametrize("near_crossing", [False, True])
+def test_edge_case(name, lowpass, exact, near_crossing):
     ref, out = run_both(scene(CASES[name]), 0, IDENT, near_z=NEAR, lowpass=lowpass, aux=True,
-                        exact_tiles=exact)
+                        exact_tiles=exact, near_crossing=near_crossing)
     assert_close(ref, out, True)
+
+
+@pytest.mark.parametrize("name", ["crosses_near_plane", "fills_screen"])
+def test_near_crossing_toggles_the_disc(name):
+    s = scene(CASES[name][:1])
+    _, off = run_both(s, 0, IDENT, near_z=NEAR, lowpass=False, near_crossing=False)
+    _, on = run_both(s, 0, IDENT, near_z=NEAR, lowpass=False, near_crossing=True)
+    assert off.alpha.max().item() == 0.0 and on.alpha.max().item() > 0.5
 
 
 def test_off_centre_principal_point():

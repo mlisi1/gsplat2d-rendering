@@ -81,17 +81,14 @@ def visible_point_mask_screen_size_torch(
     leaf-level LOD fine/coarse decision, applied to a leaf's own
     center/radius instead of one splat's.
 
-    Deliberately a coarse, conservative proxy rather than replicating the
-    CUDA kernel's own exact anisotropic footprint math (compute_transmat/
-    compute_aabb in forward.cu, which projects the splat's local tangent
-    frame through the projection matrix) -- reimplementing that exactly in
-    Python is real surface area for a subtle mismatch bug. Instead this
-    uses the standard real-time-rendering pinhole approximation, projected
-    radius ~= focal * world_radius / depth, with `world_radius` taken as
-    the *larger* in-plane scale axis (worst case, so this never
-    underestimates and over-culls) times `cutoff` to match the ~3-standard-
-    deviation effective radius the kernel itself uses by default (its own
-    `cutoff = 3.0f` in forward.cu). Points behind the camera (depth <= 0)
+    Deliberately a coarse, conservative proxy rather than the rasterizer's
+    exact projected-conic footprint (docs/rasterizer.md): the standard
+    pinhole approximation, projected radius ~= focal * world_radius /
+    depth, with `world_radius` the *larger* in-plane scale axis (worst
+    case, so this never underestimates and over-culls) times `cutoff`.
+    The rasterizer's own cutoff is sqrt(2 ln(255 * opacity)) standard
+    deviations, at most ~3.33; the default 3.0 covers nearly all of it.
+    Points behind the camera (depth <= 0)
     are never culled here -- that's frustum culling's job, not this test's;
     a non-positive depth just means 'not testable, keep it'."""
     n = xyz.shape[0]

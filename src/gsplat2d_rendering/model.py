@@ -10,12 +10,11 @@ a raw un-normalized quaternion) -- this is the PLY file format's contract,
 not a choice specific to any particular caller.
 
 Raw tensors may be float16 (see compression.py) to halve resting VRAM and
-the memory traffic masking/gathering has to move -- but every accessor below
-always hands back float32: the rasterizer CUDA kernel is hardcoded float32
-(third_party/diff-surfel-rasterization has no dtype dispatch at all), so
-fp16 storage is an implementation detail of this class, never something a
-caller needs to know about. `.float()` is a no-op (returns self, no copy)
-when a tensor is already float32, so this costs nothing when uncompressed.
+the memory traffic masking/gathering has to move. The rasterizer reads fp16
+attributes directly (positions are upcast to float32), so the render path
+passes raw tensors through untouched; the public `get_*` accessors below
+still hand back float32 for callers doing their own math. `.float()` is a
+no-op (returns self, no copy) when a tensor is already float32.
 """
 from __future__ import annotations
 
@@ -35,10 +34,9 @@ class GaussianModel:
     features_dc: torch.Tensor      # [N, 1, 3]
     features_rest: torch.Tensor    # [N, K, 3]
     active_sh_degree: int
-    # Whether the model was trained with 2DGS's screen-space low-pass blend
-    # (the original 2DGS code) or without it (3DGS-layout surfel trainers,
-    # e.g. spirula). Rendering with the wrong setting thins or fattens
-    # sub-pixel splats, so it travels with the data, not the renderer.
+    # Whether to render with 2DGS's screen-space low-pass blend. Rendering
+    # with the wrong setting thins or fattens sub-pixel splats, so it
+    # travels with the data (a PLY header comment), not the renderer.
     surfel_lowpass: bool = True
 
     @property
@@ -90,11 +88,9 @@ class GaussianModel:
         this class knows which raw field maps to which activation.
 
         Boolean-mask indexing here is O(N) regardless of mask sparsity (it
-        has to scan/compact the full N-length mask) -- fine for the
-        brute-force (mask=None) and no-octree cases, but
-        render.rasterizer.SplatRenderer's main per-frame path reaches
-        `_activate` directly with contiguous-slice-gathered (not
-        boolean-masked) raw tensors instead, for exactly this reason."""
+        has to scan/compact the full N-length mask). The renderer doesn't
+        use this: it gathers raw tensors by contiguous leaf slices and lets
+        the rasterizer activate them."""
         if mask is None:
             return self._activate(self.xyz, self.raw_opacity, self.raw_scaling,
                                    self.raw_rotation, self.features_dc, self.features_rest)

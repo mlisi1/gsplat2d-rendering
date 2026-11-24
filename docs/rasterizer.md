@@ -45,7 +45,10 @@ opacity logit `ℓ`:
 
 - `p = R μ + t`; `t_u, t_v` = first two columns of `R · rot(q/|q|)`;
   `n = t_u × t_v`; `s = exp(ls)`; `o = sigmoid(ℓ)`.
-- Culled if `o < alpha_min` or `p.z <= near_z`.
+- Culled if `o < alpha_min`, `p.z <= near_z`, or the splat is degenerate
+  (zero or non-finite quaternion, non-finite position or scale). Some real
+  PLYs carry millions of zero-filled rows, which would otherwise bin to
+  the whole image while drawing nothing.
 - `c = p · n`; if `c > 0`, flip `n` and `c`, so the normal faces the camera.
 - `a_u = t_u / s_u`, `b_u = p · a_u` (same for `v`).
 - Ray hit with the splat's plane: `τ = c / (d · n)`, which is camera z
@@ -66,10 +69,13 @@ wins, or the ray misses the plane (`|d · n| < 1e-12` or `τ <= near_z`),
 edge-on disc's plane hit can be arbitrarily far from the disc, and using
 it put depths of ~100 into a scene 3 units away during testing.
 
-`GaussianModel.surfel_lowpass` says which a model needs: true for the
-original 2DGS code's PLYs, false for 3DGS-layout surfel trainers (3 scale
-columns on disk). `write_gaussian_model` records it in a
-`comment surfel_lowpass 0|1` header line.
+`GaussianModel.surfel_lowpass` says which a model needs. It defaults to
+true for every PLY layout, overridable with a `comment surfel_lowpass 0|1`
+header line (which `write_gaussian_model` writes). The plan this kernel was
+built from assumed spirula's 3-scale models render without it, but spirula's
+own eval renders say otherwise. Against them, bonsai views 3 and 10 score
+49.0 / 49.2 dB with low-pass on and 39.3 / 42.0 dB with it off; garden
+views score 37.7 / 38.5 dB on and 28.7 / 29.7 dB off.
 
 ## Footprint
 
@@ -86,10 +92,16 @@ When the whole cutoff disc is in front of the near plane
   `M_ij = (D_i3 D_j3 - D_ij D33) / D33²`
 - half-extents `sqrt(M11)`, `sqrt(M22)`.
 
-Otherwise (the disc crosses the near plane) the footprint is the whole
-image. The raster stage's `τ > near_z` test removes what lies in front of
-the plane. With low-pass on, the box also covers the circle of radius
+Otherwise the disc crosses the near plane. By default such splats are
+**culled**, as the previous kernel did (black-box tests show it never drew
+them). With `near_crossing=True` the footprint becomes the whole image, and
+the raster stage's `τ > near_z` test removes what lies in front of the plane.
+That is more faithful but expensive: each such splat is binned to every tile. With low-pass on, the box also covers the circle of radius
 `r/√2` around `centre_px`.
+
+`max_sigma > 0` caps the cutoff at that many standard deviations
+(`r² = min(r², max_sigma²)`, applied in the raster test too): fewer pairs,
+slightly different image.
 
 All analytic bounds are padded by `0.01 + 1e-4·extent` px, so float
 rounding in the per-pixel test can never put a contributing pixel
@@ -161,3 +173,25 @@ require the kernel to match it to `1e-4`:
   `alpha_min`, an off-centre principal point, equal depths.
 
 Run with `PYTHONPATH=src:tests python3 -m pytest tests`.
+
+## Parity with the previous (Inria) kernel
+
+Measured once, from a separate checkout of the previous commit, on a
+7.2M-splat model trained with the original 2DGS code: 5 orbit poses,
+1280×720, brute force (no culling), RTX 5070 Laptop.
+
+| | PSNR vs old | depth rel. err p99 | old ms | new ms |
+|---|---|---|---|---|
+| default | 38–53 dB | ≤ 0.19 | 46–63 | 29–39 |
+| default, near-crossing discs removed from both | 52–57 dB | ≤ 0.004 | 46–63 | 16–17 |
+| `max_sigma=3` | 39–49 dB | ≤ 0.19 | 46–63 | 16–21 |
+
+The first row was measured before near-crossing culling became the default;
+its gap was those discs, which the old kernel never drew. The default now
+matches the second row.
+
+Known remaining difference: around the projected centre of strongly tilted
+splats, the old kernel's low-pass gives somewhat different alpha (up to
+~0.2 on single pixels). Fitting simple variants of the blob term (scale, a
+half-pixel offset) did not reproduce it. This kernel follows the formula
+above, which the brute-force reference checks.

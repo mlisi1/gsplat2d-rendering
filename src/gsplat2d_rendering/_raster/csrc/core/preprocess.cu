@@ -31,8 +31,14 @@ __global__ void preprocess_kernel(SurfelInputs in, SurfelCamera cam, SurfelOptio
   if (!(o >= opt.alpha_min)) return;
 
   const T* q = static_cast<const T*>(in.quats);
+  float qw = ld(q, 4ll * i), qx = ld(q, 4ll * i + 1), qy = ld(q, 4ll * i + 2), qz = ld(q, 4ll * i + 3);
+  // A zero or non-finite quaternion has no orientation (e.g. a NaN row a
+  // loader zero-filled). Left in, its NaNs would fail every footprint test
+  // and bin it to the whole image while drawing nothing.
+  float qn2 = qw * qw + qx * qx + qy * qy + qz * qz;
+  if (!(qn2 > 1e-30f) || !isfinite(qn2) || !isfinite(p.x) || !isfinite(p.y)) return;
   Vec3 r0, r1;
-  quat_columns(ld(q, 4ll * i), ld(q, 4ll * i + 1), ld(q, 4ll * i + 2), ld(q, 4ll * i + 3), r0, r1);
+  quat_columns(qw, qx, qy, qz, r0, r1);
   Vec3 tu = v3(W[0] * r0.x + W[1] * r0.y + W[2] * r0.z, W[4] * r0.x + W[5] * r0.y + W[6] * r0.z,
                W[8] * r0.x + W[9] * r0.y + W[10] * r0.z);
   Vec3 tv = v3(W[0] * r1.x + W[1] * r1.y + W[2] * r1.z, W[4] * r1.x + W[5] * r1.y + W[6] * r1.z,
@@ -40,6 +46,7 @@ __global__ void preprocess_kernel(SurfelInputs in, SurfelCamera cam, SurfelOptio
   Vec3 n = cross(tu, tv);
   const T* ls = static_cast<const T*>(in.log_scales);
   float su = expf(ld(ls, 2ll * i)), sv = expf(ld(ls, 2ll * i + 1));
+  if (!(su > 0.f) || !(sv > 0.f) || !isfinite(su) || !isfinite(sv)) return;
 
   float c = dot(p, n);
   if (c > 0.f) {  // make the normal face the camera
@@ -69,6 +76,7 @@ __global__ void preprocess_kernel(SurfelInputs in, SurfelCamera cam, SurfelOptio
   // Footprint. The fragment weight o*exp(-rho/2) drops below alpha_min
   // exactly outside rho = r2.
   double r2 = 2.0 * log((double)o / (double)opt.alpha_min);
+  if (opt.max_sigma > 0.f) r2 = fmin(r2, (double)opt.max_sigma * opt.max_sigma);
   double r = sqrt(r2);
   float cx_px = cam.fx * p.x / p.z + cam.cx, cy_px = cam.fy * p.y / p.z + cam.cy;
 
@@ -77,7 +85,9 @@ __global__ void preprocess_kernel(SurfelInputs in, SurfelCamera cam, SurfelOptio
   bool have_conic = false;
   double xc = 0, yc = 0, m11 = 0, m12 = 0, m22 = 0;
   double ez = sqrt((double)su * tu.z * su * tu.z + (double)sv * tv.z * sv * tv.z);
-  if (p.z - r * ez > cam.near_z) {
+  bool in_front = p.z - r * ez > cam.near_z;
+  if (!in_front && !opt.near_crossing) return;
+  if (in_front) {
     // H = K [su tu | sv tv | p]; dual conic D = H diag(r2, r2, -1) H^T.
     double h1x = cam.fx * su * tu.x + cam.cx * su * tu.z, h1y = cam.fy * su * tu.y + cam.cy * su * tu.z,
            h1z = su * tu.z;

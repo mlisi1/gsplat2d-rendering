@@ -38,12 +38,15 @@ def run_both(scene, sh_degree, w2c, cam=CAM, half=False, **opts):
 
 
 def max_err(ref, out, aux):
-    errs = {k: (getattr(out, k).double().cpu() - ref[k]).abs().max().item()
-            for k in ("rgb", "depth", "alpha")}
-    if aux:
-        errs["normal"] = (out.normal.double().cpu() - ref["normal"]).abs().max().item()
-        errs["median_depth"] = (out.median_depth.double().cpu() - ref["median_depth"]).abs().max().item()
-    return errs
+    """Absolute error for colour/alpha/normal; depths relative (float32
+    rounding grows with depth)."""
+    def err(k):
+        d = (getattr(out, k).double().cpu() - ref[k]).abs()
+        if "depth" in k:
+            d = d / ref[k].abs().clamp_min(1.0)
+        return d.max().item()
+    keys = ["rgb", "depth", "alpha"] + (["normal", "median_depth"] if aux else [])
+    return {k: err(k) for k in keys}
 
 
 def assert_close(ref, out, aux, tol=TOL):
@@ -60,6 +63,14 @@ def test_modes_match_reference(lowpass, aux, exact, half):
     scene = random_scene(1500, sh_degree=2, seed=1)
     ref, out = run_both(scene, 2, W2C, half=half, lowpass=lowpass, aux=aux, exact_tiles=exact)
     assert_close(ref, out, aux)
+
+
+@pytest.mark.parametrize("max_sigma", [2.0, 3.0])
+@pytest.mark.parametrize("lowpass", [False, True])
+def test_max_sigma(max_sigma, lowpass):
+    scene = random_scene(1000, seed=5)
+    ref, out = run_both(scene, 1, W2C, lowpass=lowpass, max_sigma=max_sigma, exact_tiles=True)
+    assert_close(ref, out, False)
 
 
 @pytest.mark.parametrize("sh_degree", [-1, 0, 1, 3])

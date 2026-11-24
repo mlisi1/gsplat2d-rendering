@@ -75,19 +75,13 @@ def build_leaf_proxies(
       wall segment collapses to a flat, not spherical, proxy) instead of
       an axis-aligned blob.
 
-    `scale` is genuinely 2D for the surfel rasterizer this library targets,
-    not 3D: its CUDA kernel's own scale_to_mat (auxiliary.h) builds
-    S = diag(scale.x, scale.y, 1.0) -- the third entry is a fixed 1.0
-    placeholder purely so the rotation matrix's third column can be read
-    off as the surfel's normal, not a real spatial extent (the normal
-    direction carries zero variance). `scale` may arrive here with 2 or 3
-    stored columns (some PLYs keep a vestigial third column) -- either way,
-    the covariance computed below zero-pads to a true (not
-    kernel-placeholder) zero variance along the normal. By default
+    `scale` is genuinely 2D: the surfel rasterizer takes 2 scales per
+    splat (the in-plane axes), and the normal direction carries zero
+    variance. `scale` may arrive here with 2 or 3 stored columns (some PLYs
+    keep a vestigial third column) -- either way, the covariance computed
+    below zero-pads to a true zero variance along the normal. By default
     (`keep_normal_axis=False`) the *output* `proxy_scale` is 2 columns,
-    matching that surfel kernel's per-splat float layout (a 3-column
-    scales tensor would desync its flat per-splat read, corrupting every
-    splat after the first -- silently, not an error). Pass
+    as the rasterizer requires (it rejects any other width). Pass
     `keep_normal_axis=True` only if pairing this with a genuinely-3D-GS
     kernel instead, whose splats have no surfel/degenerate-normal
     assumption, to get all 3 eigenvalues back, already in the same column

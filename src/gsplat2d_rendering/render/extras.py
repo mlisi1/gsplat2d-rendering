@@ -1,21 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
-"""allmap channel extraction beyond depth/alpha, and the 2D-GS
-median/expected depth blend -- split out of rasterizer.py's core render()
-flow (see that file's module docstring for the fixed 7-channel layout this
-reads).
+"""Depth blending and the optional per-pixel extras (alpha, normal, median
+depth) taken from the rasterizer's named outputs.
 
-`depth_ratio` blending is applied regardless of `with_extras`: the kernel
-computes every channel every frame no matter what (see rasterizer.py's
-module docstring), so reading channel 5 to blend into the primary `depth`
-output costs nothing extra. `with_extras` only gates whether the *raw*
-per-channel tensors (alpha/normal/middepth/distortion) get attached to
-RenderOutput at all -- that's the real, non-free cost (memory retained on
-GPU, and for Renderer callers, copied to CPU every frame).
+`depth_ratio` blends expected depth toward median depth, the 2D-GS paper's
+own quality/robustness knob (Huang et al. 2024); 0 keeps expected depth
+only. It needs the kernel's aux outputs, so the renderer requests them
+whenever `depth_ratio > 0` or extras are wanted. `with_extras` only gates
+whether the raw tensors are attached to RenderOutput (memory kept on GPU
+and, for Renderer callers, a per-frame CPU copy).
 
-Both the world-space rotation of `normal` and any further depth blending
-beyond the 2D-GS default are left to the caller -- these fields are raw,
-un-rotated camera-space kernel output, matching how RenderOutput.rgb/.depth
-already leave clamping/byte-casting to Renderer instead of SplatRenderer.
+Normals are raw camera-space accumulations (weighted sums of unit normals
+facing the camera, not renormalized); rotating them to world space is left
+to the caller.
 """
 from __future__ import annotations
 
@@ -23,11 +19,7 @@ from dataclasses import dataclass
 
 import torch
 
-_DEPTH_OFFSET = 0
-_ALPHA_OFFSET = 1
-_NORMAL_OFFSET = 2
-_MIDDEPTH_OFFSET = 5
-_DISTORTION_OFFSET = 6
+from gsplat2d_rendering._raster import RasterOutput
 
 
 @dataclass
@@ -35,34 +27,14 @@ class RenderExtras:
     alpha: torch.Tensor        # [H, W]
     normal: torch.Tensor       # [3, H, W], camera-space, un-rotated
     middepth: torch.Tensor     # [H, W], median depth
-    distortion: torch.Tensor   # [H, W]
 
 
 def extract_depth_and_extras(
-    allmap: torch.Tensor, depth_ratio: float, with_extras: bool,
+    out: RasterOutput, depth_ratio: float, with_extras: bool,
 ) -> tuple[torch.Tensor, RenderExtras | None]:
-    """allmap: the rasterizer's raw [7, H, W] second output tensor. Returns
-    (depth [H, W], extras-or-None)."""
-    alpha = allmap[_ALPHA_OFFSET:_ALPHA_OFFSET + 1]
-    depth = torch.nan_to_num(
-        allmap[_DEPTH_OFFSET:_DEPTH_OFFSET + 1] / alpha, nan=0.0, posinf=0.0, neginf=0.0
-    )
+    depth = out.depth
     if depth_ratio > 0.0:
-        # 2D-GS's own median/expected depth blend (Huang et al. 2024) -- a
-        # real quality/robustness tradeoff the paper itself treats as a
-        # knob, not a Kestrel-specific concept. depth_ratio=0 (default)
-        # reproduces this library's previous expected-depth-only behavior
-        # exactly.
-        middepth = allmap[_MIDDEPTH_OFFSET:_MIDDEPTH_OFFSET + 1]
-        depth = depth * (1.0 - depth_ratio) + depth_ratio * middepth
-    depth = depth.squeeze(0)
-
+        depth = depth * (1.0 - depth_ratio) + depth_ratio * out.median_depth
     if not with_extras:
         return depth, None
-    extras = RenderExtras(
-        alpha=alpha.squeeze(0),
-        normal=allmap[_NORMAL_OFFSET:_NORMAL_OFFSET + 3],
-        middepth=allmap[_MIDDEPTH_OFFSET],
-        distortion=allmap[_DISTORTION_OFFSET],
-    )
-    return depth, extras
+    return depth, RenderExtras(alpha=out.alpha, normal=out.normal, middepth=out.median_depth)

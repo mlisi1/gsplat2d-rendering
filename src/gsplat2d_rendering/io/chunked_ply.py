@@ -74,6 +74,7 @@ class ChunkedPlyReader:
         device: str = "cuda",
         compression_level: int = 0,
         target_sh_degree: int = 1,
+        surfel_lowpass: bool | None = None,
     ) -> GaussianModel:
         """Loads only rows [row_start, row_start + row_count) of the vertex
         element. opacity_threshold is deliberately not exposed here --
@@ -96,6 +97,7 @@ class ChunkedPlyReader:
             # docstring for why that's NORMAL-level but this is VERBOSE-level.
             verbose_log=True,
             comments=self._comments,
+            surfel_lowpass=surfel_lowpass,
         )
 
 
@@ -107,6 +109,7 @@ def load_gaussian_model_range(
     device: str = "cuda",
     compression_level: int = 0,
     target_sh_degree: int = 1,
+    surfel_lowpass: bool | None = None,
 ) -> GaussianModel:
     """One-off convenience wrapper around ChunkedPlyReader -- opens the file,
     reads a single range, and lets the PlyData/mmap get garbage-collected.
@@ -115,4 +118,5 @@ def load_gaussian_model_range(
     re-opening and re-parsing the file on every call."""
     return ChunkedPlyReader(path).read_range(
         row_start, row_count, sh_degree, device, compression_level, target_sh_degree,
+        surfel_lowpass,
     )

@@ -92,9 +92,7 @@ def _surfel_scales_from_3(scaling: np.ndarray, source: str) -> np.ndarray:
 
 def _lowpass_from_comments(comments, default: bool) -> bool:
     """An explicit `comment surfel_lowpass 0|1` header line (written by
-    write_gaussian_model) wins over the scale-layout guess: once a 3-scale
-    file is rewritten with 2 scales, the layout no longer says which
-    trainer produced it."""
+    write_gaussian_model, or added by a trainer) overrides the default."""
     for c in comments:
         parts = c.split()
         if len(parts) == 2 and parts[0] == _LOWPASS_COMMENT and parts[1] in ("0", "1"):
@@ -120,6 +118,7 @@ def _gaussian_model_from_element(
     source: str = "PLY data",
     verbose_log: bool = False,
     comments=(),
+    surfel_lowpass: bool | None = None,
 ) -> GaussianModel:
     """Shared by load_gaussian_model (whole-file read) and
     io.chunked_ply.load_gaussian_model_range/ChunkedPlyReader.read_range (a
@@ -135,19 +134,20 @@ def _gaussian_model_from_element(
     line per chunk.
 
     `comments` are the file's header comments (an element has none of its
-    own), used for the `surfel_lowpass` flag."""
+    own), used for the `surfel_lowpass` flag. An explicit `surfel_lowpass`
+    argument overrides both the comment and the default."""
     xyz = _sanitize(_stack(el, ["x", "y", "z"]), "xyz")
     _check_float_dtype(el, ["opacity"])
     opacity = _sanitize(np.asarray(el["opacity"], dtype=np.float32)[..., None], "opacity")
     scaling = _sanitize(_stack(el, _sorted_props(el, "scale_")), "scale")
-    surfel_lowpass = True
     if scaling.shape[1] == 3:
         scaling = _surfel_scales_from_3(scaling, source)
-        # 3DGS-layout surfel trainers render the bare disc, no low-pass.
-        surfel_lowpass = False
     elif scaling.shape[1] != 2:
         raise ValueError(f"{source}: expected 2 or 3 scale_ properties, got {scaling.shape[1]}")
-    surfel_lowpass = _lowpass_from_comments(comments, surfel_lowpass)
+    # On for both layouts: spirula's own eval renders of 3-scale models match
+    # ~10 dB better with the low-pass than without (measured, docs/rasterizer.md).
+    if surfel_lowpass is None:
+        surfel_lowpass = _lowpass_from_comments(comments, True)
     rotation = _sanitize(_stack(el, _sorted_props(el, "rot_")), "rotation")
     features_dc = _sanitize(_stack(el, _sorted_props(el, "f_dc_")), "f_dc")[:, np.newaxis, :]
 
@@ -206,8 +206,14 @@ def load_gaussian_model(
     compression_level: int = 0,
     target_sh_degree: int = 1,
     opacity_threshold: float = 0.0,
+    surfel_lowpass: bool | None = None,
 ) -> GaussianModel:
     """compression_level: 0 (none) - 3 (aggressive), see compression.py.
+    surfel_lowpass: whether to render with the 2DGS screen-space low-pass;
+    None reads a `comment surfel_lowpass 0|1` header line, else defaults to
+    True. Nothing in a PLY's layout says how a model was trained (spirula
+    dropped its low-pass mid-2026 without changing the format), so a
+    caller that knows should pass it, and persist it per model.
     target_sh_degree only applies at compression_level 2. opacity_threshold:
     0.0 (default, off) permanently drops splats at/under this activated
     opacity when loading -- see compression.py's prune_low_opacity for why
@@ -216,7 +222,7 @@ def load_gaussian_model(
     ply = PlyData.read(ply_path)
     return _gaussian_model_from_element(
         ply.elements[0], sh_degree, device, compression_level, target_sh_degree, opacity_threshold,
-        source=ply_path, comments=ply.comments,
+        source=ply_path, comments=ply.comments, surfel_lowpass=surfel_lowpass,
     )
 
 

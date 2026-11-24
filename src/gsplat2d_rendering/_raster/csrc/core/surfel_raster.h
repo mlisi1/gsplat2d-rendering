@@ -40,9 +40,16 @@ struct SurfelOptions {
   bool lowpass = false;      // 2DGS screen-space low-pass
   bool aux = false;          // normal + median depth outputs
   bool exact_tiles = false;  // per-tile-row conic test instead of the bounding box
+  // Draw the in-front part of discs whose cutoff footprint crosses the near
+  // plane. Off (the default) culls them: they need a whole-image footprint,
+  // which is slow, and the previous renderer never drew them either.
+  bool near_crossing = false;
   float alpha_min = 1.f / 255.f;
   float alpha_max = 0.99f;
   float t_min = 1e-4f;
+  // > 0: also cut each splat off at this many standard deviations
+  // (rho <= max_sigma^2), on top of the alpha_min contour.
+  float max_sigma = 0.f;
   float background[3] = {0.f, 0.f, 0.f};
 };
 
