@@ -5,9 +5,12 @@ downstream project): `f_rest_` properties are laid out `[N, 3*K]` with
 axis-1 ordered `[R_0..R_{K-1}, G_0..G_{K-1}, B_0..B_{K-1}]`, so the reshape
 must be `reshape(-1, 3, K).transpose(0, 2, 1)` -- reshaping directly to
 `(-1, K, 3)` silently scrambles the RGB channels into the wrong colors.
-Quaternions are stored `(w, x, y, z)`. Note `scale_` may have 2 or 3
-properties -- 2D-GS surfels only need 2 (in-plane) scale axes, unlike
-3D-GS's 3.
+Quaternions are stored `(w, x, y, z)`. `scale_` may have 2 or 3
+properties: the original 2D-GS code writes the 2 in-plane axes, while
+surfel trainers that keep 3D-GS storage (e.g. spirula) write a third,
+collapsed (~exp(-20)) axis so 3D-GS viewers draw flat discs. The loader
+drops that third axis -- the rasterizer takes exactly 2 per splat -- and
+refuses a third axis that isn't collapsed (a real 3D-GS model).
 
 A source .ply may already have been through offline compression (e.g. a
 lower SH degree already baked in, or -- from some other tool -- int8-packed
@@ -69,6 +72,35 @@ def _stack(el, names: list[str]) -> np.ndarray:
     return np.stack([np.asarray(el[name]) for name in names], axis=1).astype(np.float32)
 
 
+# A surfel PLY written by a 3DGS-layout trainer keeps a collapsed third log
+# scale (~-20); the surfel rasterizer takes exactly 2 per splat.
+_COLLAPSED_LOG_SCALE = -15.0
+_LOWPASS_COMMENT = "surfel_lowpass"
+
+
+def _surfel_scales_from_3(scaling: np.ndarray, source: str) -> np.ndarray:
+    if scaling.shape[0] == 0:
+        return np.ascontiguousarray(scaling[:, :2])
+    third = scaling[:, 2]
+    if np.median(third) < _COLLAPSED_LOG_SCALE and np.all(third <= scaling[:, :2].max(axis=1)):
+        return np.ascontiguousarray(scaling[:, :2])
+    raise ValueError(
+        f"{source} has 3 non-degenerate scales per splat: a 3DGS model, not a 2DGS one."
+    )
+
+
+def _lowpass_from_comments(comments, default: bool) -> bool:
+    """An explicit `comment surfel_lowpass 0|1` header line (written by
+    write_gaussian_model) wins over the scale-layout guess: once a 3-scale
+    file is rewritten with 2 scales, the layout no longer says which
+    trainer produced it."""
+    for c in comments:
+        parts = c.split()
+        if len(parts) == 2 and parts[0] == _LOWPASS_COMMENT and parts[1] in ("0", "1"):
+            return parts[1] == "1"
+    return default
+
+
 def _sanitize(arr: np.ndarray, label: str) -> np.ndarray:
     n_bad = int(np.sum(~np.isfinite(arr)))
     if n_bad > 0:
@@ -86,6 +118,7 @@ def _gaussian_model_from_element(
     opacity_threshold: float,
     source: str = "PLY data",
     verbose_log: bool = False,
+    comments=(),
 ) -> GaussianModel:
     """Shared by load_gaussian_model (whole-file read) and
     io.chunked_ply.load_gaussian_model_range/ChunkedPlyReader.read_range (a
@@ -98,11 +131,22 @@ def _gaussian_model_from_element(
     visibility, but a caller doing many small range reads against the same
     file (chunk streaming reading one chunk at a time, potentially hundreds
     of times per session) would otherwise flood NORMAL-level output with one
-    line per chunk."""
+    line per chunk.
+
+    `comments` are the file's header comments (an element has none of its
+    own), used for the `surfel_lowpass` flag."""
     xyz = _sanitize(_stack(el, ["x", "y", "z"]), "xyz")
     _check_float_dtype(el, ["opacity"])
     opacity = _sanitize(np.asarray(el["opacity"], dtype=np.float32)[..., None], "opacity")
     scaling = _sanitize(_stack(el, _sorted_props(el, "scale_")), "scale")
+    surfel_lowpass = True
+    if scaling.shape[1] == 3:
+        scaling = _surfel_scales_from_3(scaling, source)
+        # 3DGS-layout surfel trainers render the bare disc, no low-pass.
+        surfel_lowpass = False
+    elif scaling.shape[1] != 2:
+        raise ValueError(f"{source}: expected 2 or 3 scale_ properties, got {scaling.shape[1]}")
+    surfel_lowpass = _lowpass_from_comments(comments, surfel_lowpass)
     rotation = _sanitize(_stack(el, _sorted_props(el, "rot_")), "rotation")
     features_dc = _sanitize(_stack(el, _sorted_props(el, "f_dc_")), "f_dc")[:, np.newaxis, :]
 
@@ -145,6 +189,7 @@ def _gaussian_model_from_element(
         features_dc=to_device(arrays["features_dc"]),
         features_rest=to_device(arrays["features_rest"]),
         active_sh_degree=degree,
+        surfel_lowpass=surfel_lowpass,
     )
     prune_note = f", pruned {n_pruned:,} at opacity<={opacity_threshold}" if n_pruned else ""
     log_fn = verbose if verbose_log else info
@@ -167,10 +212,10 @@ def load_gaussian_model(
     opacity when loading -- see compression.py's prune_low_opacity for why
     this can be a large fraction of a real model."""
     ply_path = str(path)
-    el = PlyData.read(ply_path).elements[0]
+    ply = PlyData.read(ply_path)
     return _gaussian_model_from_element(
-        el, sh_degree, device, compression_level, target_sh_degree, opacity_threshold,
-        source=ply_path,
+        ply.elements[0], sh_degree, device, compression_level, target_sh_degree, opacity_threshold,
+        source=ply_path, comments=ply.comments,
     )
 
 
@@ -214,5 +259,7 @@ def write_gaussian_model(path: str | Path, model: GaussianModel) -> None:
     for name, col in zip(names, cols):
         structured[name] = col
 
-    PlyData([PlyElement.describe(structured, "vertex")], text=False).write(str(path))
+    comments = [f"{_LOWPASS_COMMENT} {int(model.surfel_lowpass)}"]
+    PlyData([PlyElement.describe(structured, "vertex")], text=False,
+            comments=comments).write(str(path))
     info(__name__, f"Wrote {n:,} splats to {path}")

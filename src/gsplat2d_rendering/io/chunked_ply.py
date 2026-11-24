@@ -61,7 +61,9 @@ class ChunkedPlyReader:
 
     def __init__(self, path: str | Path):
         self.path = str(path)
-        self._element = PlyData.read(self.path).elements[0]
+        ply = PlyData.read(self.path)
+        self._element = ply.elements[0]
+        self._comments = list(ply.comments)
 
     def read_range(
         self,
@@ -92,6 +94,7 @@ class ChunkedPlyReader:
             # whole-file load is -- see _gaussian_model_from_element's own
             # docstring for why that's NORMAL-level but this is VERBOSE-level.
             verbose_log=True,
+            comments=self._comments,
         )
 
 

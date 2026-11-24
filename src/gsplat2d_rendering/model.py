@@ -29,11 +29,16 @@ from gsplat2d_rendering._log import info, verbose
 class GaussianModel:
     xyz: torch.Tensor              # [N, 3]
     raw_opacity: torch.Tensor      # [N, 1], pre-sigmoid
-    raw_scaling: torch.Tensor      # [N, 2 or 3], pre-exp (log-space)
+    raw_scaling: torch.Tensor      # [N, 2], pre-exp (log-space), in-plane axes only
     raw_rotation: torch.Tensor     # [N, 4], un-normalized quaternion (w, x, y, z)
     features_dc: torch.Tensor      # [N, 1, 3]
     features_rest: torch.Tensor    # [N, K, 3]
     active_sh_degree: int
+    # Whether the model was trained with 2DGS's screen-space low-pass blend
+    # (the original 2DGS code) or without it (3DGS-layout surfel trainers,
+    # e.g. spirula). Rendering with the wrong setting thins or fattens
+    # sub-pixel splats, so it travels with the data, not the renderer.
+    surfel_lowpass: bool = True
 
     @property
     def get_xyz(self) -> torch.Tensor:
@@ -167,6 +172,8 @@ def concat_gaussian_models(models: list[GaussianModel]) -> GaussianModel:
             raise ValueError(
                 f"concat_gaussian_models: SH degree mismatch ({m.active_sh_degree} vs {degree})"
             )
+        if m.surfel_lowpass != models[0].surfel_lowpass:
+            raise ValueError("concat_gaussian_models: surfel_lowpass mismatch across inputs")
     return GaussianModel(
         xyz=torch.cat([m.xyz for m in models], dim=0),
         raw_opacity=torch.cat([m.raw_opacity for m in models], dim=0),
@@ -175,4 +182,5 @@ def concat_gaussian_models(models: list[GaussianModel]) -> GaussianModel:
         features_dc=torch.cat([m.features_dc for m in models], dim=0),
         features_rest=torch.cat([m.features_rest for m in models], dim=0),
         active_sh_degree=degree,
+        surfel_lowpass=models[0].surfel_lowpass,
     )
